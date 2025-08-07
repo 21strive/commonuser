@@ -2,8 +2,8 @@ package lib
 
 import (
 	"fmt"
+	"github.com/21strive/commonuser/definition"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/lefalya/commonuser/definition"
 )
 
 type JWTHandler struct {

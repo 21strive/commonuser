@@ -2,13 +2,13 @@ package lib
 
 import (
 	"database/sql"
-	"github.com/lefalya/commonuser/definition"
-	"github.com/lefalya/pageflow"
+	"github.com/21strive/commonuser/definition"
+	"github.com/21strive/redifu"
 	"time"
 )
 
 type UpdateEmailRequestSQL struct {
-	*pageflow.SQLItem    `bson:",inline" json:",inline"`
+	*redifu.SQLItem      `bson:",inline" json:",inline"`
 	AccountUUID          string    `db:"accountuuid"`
 	PreviousEmailAddress string    `db:"previousemailaddress"`
 	NewEmailAddress      string    `db:"newemailaddress"`
@@ -29,7 +29,7 @@ func (ue *UpdateEmailRequestSQL) SetNewEmailAddress(email string) {
 }
 
 func (ue *UpdateEmailRequestSQL) SetResetToken() {
-	token := pageflow.RandId()
+	token := redifu.RandId()
 	ue.UpdateToken = token
 }
 
@@ -51,7 +51,7 @@ func (ue *UpdateEmailRequestSQL) Validate(updateToken string) error {
 
 func NewUpdateEmailRequestSQL() *UpdateEmailRequestSQL {
 	ue := &UpdateEmailRequestSQL{}
-	pageflow.InitSQLItem(ue)
+	redifu.InitSQLItem(ue)
 	return ue
 }
 

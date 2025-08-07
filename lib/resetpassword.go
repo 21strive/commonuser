@@ -2,17 +2,17 @@ package lib
 
 import (
 	"database/sql"
-	"github.com/lefalya/commonuser/definition"
-	"github.com/lefalya/pageflow"
+	"github.com/21strive/commonuser/definition"
+	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 	"time"
 )
 
 type ResetPasswordRequestSQL struct {
-	*pageflow.SQLItem `bson:",inline" json:",inline"`
-	AccountUUID       string    `db:"accountuuid"`
-	Token             string    `db:"token"`
-	ExpiredAt         time.Time `db:"expiredat"`
+	*redifu.SQLItem `bson:",inline" json:",inline"`
+	AccountUUID     string    `db:"accountuuid"`
+	Token           string    `db:"token"`
+	ExpiredAt       time.Time `db:"expiredat"`
 }
 
 func (rpsql *ResetPasswordRequestSQL) SetAccountUUID(account *AccountSQL) {
@@ -20,7 +20,7 @@ func (rpsql *ResetPasswordRequestSQL) SetAccountUUID(account *AccountSQL) {
 }
 
 func (rpsql *ResetPasswordRequestSQL) SetToken() {
-	rpsql.Token = pageflow.RandId()
+	rpsql.Token = redifu.RandId()
 }
 
 func (rpsql *ResetPasswordRequestSQL) SetExpiredAt() {
@@ -40,12 +40,12 @@ func (rpsql *ResetPasswordRequestSQL) Validate(token string) error {
 
 func NewResetPasswordSQL() *ResetPasswordRequestSQL {
 	request := &ResetPasswordRequestSQL{}
-	pageflow.InitSQLItem(request)
+	redifu.InitSQLItem(request)
 	return request
 }
 
 type ResetPasswordManagerSQL struct {
-	base       *pageflow.Base[AccountSQL]
+	base       *redifu.Base[AccountSQL]
 	db         *sql.DB
 	entityName string
 }
@@ -122,7 +122,7 @@ func (ar *ResetPasswordManagerSQL) Delete(requestSQL *ResetPasswordRequestSQL) e
 }
 
 func NewResetPasswordManagerSQL(db *sql.DB, redis *redis.Client, entityName string) *ResetPasswordManagerSQL {
-	base := pageflow.NewBase[AccountSQL](redis, entityName+":%s")
+	base := redifu.NewBase[AccountSQL](redis, entityName+":%s")
 	return &ResetPasswordManagerSQL{
 		base: base,
 		db:   db,

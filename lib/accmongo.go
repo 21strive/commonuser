@@ -1,8 +1,8 @@
 package lib
 
-import "github.com/lefalya/pageflow"
+import "github.com/21strive/redifu"
 
 type AccountMongo struct {
-	*pageflow.MongoItem `bson:",inline" json:",inline"`
-	*Base               `bson:",inline" json:",inline"`
+	*redifu.MongoItem `bson:",inline" json:",inline"`
+	*Base             `bson:",inline" json:",inline"`
 }

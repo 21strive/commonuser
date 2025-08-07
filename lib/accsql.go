@@ -3,14 +3,14 @@ package lib
 import (
 	"database/sql"
 	"errors"
+	"github.com/21strive/redifu"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/lefalya/pageflow"
 	"github.com/redis/go-redis/v9"
 	"time"
 )
 
 type AccountSQL struct {
-	*pageflow.SQLItem `bson:",inline" json:",inline"`
+	*redifu.SQLItem `bson:",inline" json:",inline"`
 	*Base
 }
 
@@ -76,13 +76,13 @@ func NewAccountSQL() *AccountSQL {
 		Base: &Base{},
 	}
 
-	pageflow.InitSQLItem(account)
+	redifu.InitSQLItem(account)
 	return account
 }
 
 type AccountManagerSQL struct {
 	db         *sql.DB
-	base       *pageflow.Base[AccountSQL]
+	base       *redifu.Base[AccountSQL]
 	entityName string
 }
 
@@ -202,7 +202,7 @@ func (asql *AccountManagerSQL) SeedByUUID(uuid string) error {
 }
 
 func NewAccountManagerSQL(db *sql.DB, redis *redis.Client, entityName string) *AccountManagerSQL {
-	base := pageflow.NewBase[AccountSQL](redis, entityName+":%s")
+	base := redifu.NewBase[AccountSQL](redis, entityName+":%s")
 	return &AccountManagerSQL{
 		db:         db,
 		base:       base,
@@ -211,7 +211,7 @@ func NewAccountManagerSQL(db *sql.DB, redis *redis.Client, entityName string) *A
 }
 
 type AccountFetchers struct {
-	base *pageflow.Base[AccountSQL]
+	base *redifu.Base[AccountSQL]
 }
 
 func (af *AccountFetchers) FetchByUsername(username string) (*AccountSQL, error) {
@@ -258,7 +258,7 @@ func (af *AccountFetchers) FetchByRandId(randId string) (*AccountSQL, error) {
 }
 
 func NewAccountFetchers(redis *redis.Client, entityName string) *AccountFetchers {
-	base := pageflow.NewBase[AccountSQL](redis, entityName+":%s")
+	base := redifu.NewBase[AccountSQL](redis, entityName+":%s")
 	return &AccountFetchers{
 		base: base,
 	}
