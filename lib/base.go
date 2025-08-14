@@ -11,13 +11,13 @@ import (
 )
 
 type UserClaims struct {
-	UUID              string    `json:"uuid"` // user uuid
-	RandId            string    `json:"randId"`
-	Name              string    `json:"name"`
-	Username          string    `json:"username,omitempty"`
-	Email             string    `json:"email,omitempty"`
-	Avatar            string    `json:"avatar,omitempty"`
-	PasswordUpdatedAt time.Time `json:"passwordupdatedat,omitempty"`
+	UUID      string `json:"uuid"` // user uuid
+	RandId    string `json:"randId"`
+	Name      string `json:"name"`
+	Username  string `json:"username,omitempty"`
+	Email     string `json:"email,omitempty"`
+	Avatar    string `json:"avatar,omitempty"`
+	SessionID string `json:"sessionid"`
 	jwt.RegisteredClaims
 }
 
@@ -149,7 +149,7 @@ func (s *Session) GenerateRefreshToken() error {
 	return nil
 }
 
-func (s *Session) SetExpiresAt(refreshTokenLifeSpan time.Duration) {
+func (s *Session) SetLifeSpan(refreshTokenLifeSpan time.Duration) {
 	timeNow := time.Now().UTC()
 	expiresAt := timeNow.Add(refreshTokenLifeSpan)
 	s.ExpiresAt = expiresAt

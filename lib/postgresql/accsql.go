@@ -16,18 +16,18 @@ type AccountSQL struct {
 	lib.Base
 }
 
-func (asql *AccountSQL) GenerateAccessToken(jwtSecret string, jwtTokenIssuer string, jwtTokenLifeSpan time.Duration) (string, error) {
+func (asql *AccountSQL) GenerateAccessToken(jwtSecret string, jwtTokenIssuer string, jwtTokenLifeSpan time.Duration, sessionID string) (string, error) {
 	timeNow := time.Now().UTC()
 	expirestAt := timeNow.Add(jwtTokenLifeSpan)
 
 	userClaims := lib.UserClaims{
-		UUID:              asql.GetUUID(),
-		RandId:            asql.GetRandId(),
-		Name:              asql.Name,
-		Username:          asql.Username,
-		Email:             asql.Email,
-		Avatar:            asql.Avatar,
-		PasswordUpdatedAt: asql.PasswordUpdatedAt,
+		UUID:      asql.GetUUID(),
+		RandId:    asql.GetRandId(),
+		Name:      asql.Name,
+		Username:  asql.Username,
+		Email:     asql.Email,
+		Avatar:    asql.Avatar,
+		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer: jwtTokenIssuer,
 			IssuedAt: &jwt.NumericDate{
