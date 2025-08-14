@@ -1,4 +1,4 @@
-package lib
+package postgresql
 
 import (
 	"database/sql"
@@ -121,7 +121,7 @@ func (ar *ResetPasswordManagerSQL) Delete(requestSQL *ResetPasswordRequestSQL) e
 	return nil
 }
 
-func NewResetPasswordManagerSQL(db *sql.DB, redis *redis.Client, entityName string) *ResetPasswordManagerSQL {
+func NewResetPasswordManagerSQL(db *sql.DB, redis redis.UniversalClient, entityName string) *ResetPasswordManagerSQL {
 	base := redifu.NewBase[AccountSQL](redis, entityName+":%s")
 	return &ResetPasswordManagerSQL{
 		base: base,

@@ -40,15 +40,6 @@ func (jh *JWTHandler) ParseAccessToken(jwtToken string) (*UserClaims, error) {
 	return userClaims.(*UserClaims), nil
 }
 
-func (jh *JWTHandler) ParseRefreshToken(jwtToken string) (*RefreshTokenClaims, error) {
-	refreshClaims, err := jh.ParseJWT(jwtToken, &RefreshTokenClaims{})
-	if err != nil {
-		return nil, err
-	}
-
-	return refreshClaims.(*RefreshTokenClaims), nil
-}
-
 func NewJWTHandler(jwtSecret string, jwtTokenIssuer string, jwtTokenLifeSpan int) *JWTHandler {
 	return &JWTHandler{
 		jwtSecret:        jwtSecret,
