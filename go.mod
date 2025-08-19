@@ -3,7 +3,7 @@ module github.com/21strive/commonuser
 go 1.23.7
 
 require (
-	github.com/21strive/item v0.1.1
+	github.com/21strive/item v0.2.0
 	github.com/21strive/redifu v0.8.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/matthewhartstonge/argon2 v1.3.3
