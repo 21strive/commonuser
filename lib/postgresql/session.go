@@ -26,8 +26,8 @@ type SessionManagerSQL struct {
 }
 
 func (sm *SessionManagerSQL) Create(session SessionSQL) error {
-	tableName := sm.entityName + "session"
-	query := `INSERT INTO ` + tableName + ` (uuid, randId, createdat, updatedat, lastactiveat, accountuuid, deviceid, deviceinfo, useragent, refreshtoken, expiredat, isactive) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	tableName := sm.entityName + "_session"
+	query := `INSERT INTO ` + tableName + ` (uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 	_, err := sm.db.Exec(query,
 		session.GetUUID(),
 		session.GetRandId(),
@@ -49,8 +49,8 @@ func (sm *SessionManagerSQL) Create(session SessionSQL) error {
 }
 
 func (sm *SessionManagerSQL) Update(session *SessionSQL) error {
-	tableName := sm.entityName + "session"
-	query := `UPDATE ` + tableName + ` SET lastactiveat = $1, isactive = $2, deactivatedat = $3 WHERE uuid = $4`
+	tableName := sm.entityName + "_session"
+	query := `UPDATE ` + tableName + ` SET last_active_at = $1, is_active = $2, deactivated_at = $3 WHERE uuid = $4`
 	_, err := sm.db.Exec(
 		query,
 		session.LastActiveAt,
@@ -98,24 +98,24 @@ func (sm *SessionManagerSQL) scanSession(scanner interface {
 }
 
 func (sm *SessionManagerSQL) FindByHash(hash string) (*SessionSQL, error) {
-	tableName := sm.entityName + "session"
-	query := `SELECT uuid, randId, createdat, updatedat, lastactiveat, accountuuid, deviceid, deviceinfo, useragent, refreshtoken, expiresat, isactive, deactivatedat FROM ` + tableName + ` WHERE refreshtoken = $1`
+	tableName := sm.entityName + "_session"
+	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active, deactivated_at FROM ` + tableName + ` WHERE refresh_token = $1`
 	row := sm.db.QueryRow(query, hash)
 
 	return sm.scanSession(row)
 }
 
 func (sm *SessionManagerSQL) FindByRandId(randId string) (*SessionSQL, error) {
-	tableName := sm.entityName + "session"
-	query := `SELECT uuid, randId, createdat, updatedat, lastactiveat, accountuuid, deviceid, deviceinfo, useragent, refreshtoken, expiresat, isactive, deactivatedat FROM ` + tableName + ` WHERE randId = $1`
+	tableName := sm.entityName + "_session"
+	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active, deactivated_at FROM ` + tableName + ` WHERE randid = $1`
 	row := sm.db.QueryRow(query, randId)
 
 	return sm.scanSession(row)
 }
 
 func (sm *SessionManagerSQL) FindByAccountUUID(accountUUID string) ([]SessionSQL, error) {
-	tableName := sm.entityName + "session"
-	query := `SELECT uuid, randId, createdat, updatedat, lastactiveat, accountuuid, deviceid, deviceinfo, useragent, refreshtoken, expiresat, isrevoked, deactivatedat FROM ` + tableName + ` WHERE accountuuid = $1`
+	tableName := sm.entityName + "_session"
+	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active, deactivated_at FROM ` + tableName + ` WHERE account_uuid = $1`
 	rows, err := sm.db.Query(query, accountUUID)
 	if err != nil {
 		return nil, err

@@ -9,11 +9,11 @@ import (
 
 type UpdateEmailRequestSQL struct {
 	*redifu.SQLItem      `bson:",inline" json:",inline"`
-	AccountUUID          string    `db:"accountuuid"`
-	PreviousEmailAddress string    `db:"previousemailaddress"`
-	NewEmailAddress      string    `db:"newemailaddress"`
-	UpdateToken          string    `db:"updatetoken"`
-	ExpiredAt            time.Time `db:"expiredat"`
+	AccountUUID          string    `db:"account_uuid"`
+	PreviousEmailAddress string    `db:"previous_email_address"`
+	NewEmailAddress      string    `db:"new_email_address"`
+	UpdateToken          string    `db:"update_token"`
+	ExpiredAt            time.Time `db:"expired_at"`
 }
 
 func (ue *UpdateEmailRequestSQL) SetAccountUUID(account *AccountSQL) {
@@ -69,7 +69,7 @@ func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddre
 
 	tableName := em.entityName + "UpdateEmailManagerSQL"
 
-	query := `INSERT INTO ` + tableName + ` (uuid, randId, createdat, updatedat, accountuuid, previousemailaddress, newemailaddress, updatetoken, expiredat) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	query := `INSERT INTO ` + tableName + ` (uuid, randId, created_at, updated_at, account_uuid, previous_email_address, new_email_address, update_token, expired_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	_, errInsert := em.db.Exec(
 		query,
 		updateEmailRequest.GetUUID(),
@@ -89,7 +89,7 @@ func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddre
 }
 
 func (em *UpdateEmailManagerSQL) FindRequest(account AccountSQL) (*UpdateEmailRequestSQL, error) {
-	query := `SELECT * FROM ` + em.entityName + `UpdateEmailManagerSQL WHERE accountuuid = $1`
+	query := `SELECT * FROM ` + em.entityName + `update_email WHERE account_uuid = $1`
 	row := em.db.QueryRow(query, account.GetUUID())
 	updateEmailRequest := NewUpdateEmailRequestSQL()
 	err := row.Scan(

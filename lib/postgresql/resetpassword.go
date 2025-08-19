@@ -57,7 +57,7 @@ func (ar *ResetPasswordManagerSQL) Create(account *AccountSQL) (*ResetPasswordRe
 	requestResetPassword.SetExpiredAt()
 
 	tableName := ar.entityName + "ResetPassword"
-	query := `INSERT INTO $1 (uuid, randId, createdat, updatedat, accountuuid, token, expiredat) VALUES ($2, $3, $4, $5, $6, $7, $8)`
+	query := `INSERT INTO $1 (uuid, randId, created_at, updated_at, accountuuid, token, expiredat) VALUES ($2, $3, $4, $5, $6, $7, $8)`
 	_, errInsert := ar.db.Exec(
 		query,
 		tableName,

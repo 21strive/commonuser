@@ -19,7 +19,7 @@ func main() {
 		dbPassword = flag.String("password", "", "Database password")
 		dbName     = flag.String("db", "", "Database name")
 		entityName = flag.String("entity", "", "Entity name (required)")
-		tables     = flag.String("tables", "all", "Tables to create: all, account, reset, update (comma-separated)")
+		tables     = flag.String("tables", "all", "Tables to create: all, account, reset, update, session (comma-separated)")
 		sslMode    = flag.String("ssl", "disable", "SSL mode (disable, require)")
 	)
 
@@ -35,7 +35,7 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nExample:\n")
 		fmt.Fprintf(os.Stderr, "  %s -entity=user -user=postgres -password=mypass -db=myapp\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s -entity=admin -user=postgres -password=mypass -db=myapp -tables=account,reset\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s -entity=admin -user=postgres -password=mypass -db=myapp -tables=account,reset,session\n", os.Args[0])
 	}
 
 	flag.Parse()
@@ -99,6 +99,14 @@ func main() {
 		fmt.Println("✓ Update email table created successfully")
 	}
 
+	if createAll || contains(tablesToCreate, "session") {
+		fmt.Printf("Creating session table for entity: %s\n", *entityName)
+		if err := CreateSessionTableSQL(db, *entityName); err != nil {
+			log.Fatalf("Failed to create session table: %v", err)
+		}
+		fmt.Println("✓ Session table created successfully")
+	}
+
 	fmt.Println("\nAll tables created successfully!")
 }
 
@@ -112,13 +120,13 @@ func contains(slice []string, item string) bool {
 }
 
 func CreateResetPasswordTableSQL(db *sql.DB, entityName string) error {
-	tableName := entityName + "resetpassword"
+	tableName := entityName + "_reset_password"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
        uuid VARCHAR(255) PRIMARY KEY,
        email VARCHAR(255) UNIQUE NOT NULL,
-       accountuuid VARCHAR(255) NOT NULL,
-       createdat TIMESTAMP DEFAULT NOW(),
-       updatedat TIMESTAMP DEFAULT NOW(),
+       account_uuid VARCHAR(255) NOT NULL,
+       created_at TIMESTAMP DEFAULT NOW(),
+       updated_at TIMESTAMP DEFAULT NOW(),
        token VARCHAR(255) UNIQUE NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_email ON ` + tableName + `(email);
@@ -131,9 +139,9 @@ func CreateResetPasswordTableSQL(db *sql.DB, entityName string) error {
 func CreateAccountTableSQL(db *sql.DB, entityName string) error {
 	query := `CREATE TABLE IF NOT EXISTS ` + entityName + ` (
        uuid VARCHAR(255) PRIMARY KEY,
-       randId VARCHAR(255) UNIQUE,
-       createdat TIMESTAMP DEFAULT NOW(),
-       updatedat TIMESTAMP DEFAULT NOW(),
+       randid VARCHAR(255) UNIQUE,
+       created_at TIMESTAMP DEFAULT NOW(),
+       updated_at TIMESTAMP DEFAULT NOW(),
        name VARCHAR(255),
        username VARCHAR(255) UNIQUE,
        password VARCHAR(255) NOT NULL,
@@ -151,19 +159,46 @@ func CreateAccountTableSQL(db *sql.DB, entityName string) error {
 }
 
 func CreateUpdateEmailTableSQL(db *sql.DB, entityName string) error {
-	tableName := entityName + "updateemail"
+	tableName := entityName + "_update_email"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
        uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-       randId VARCHAR(255) UNIQUE,
-       createdat TIMESTAMP DEFAULT NOW(),
-       updatedat TIMESTAMP DEFAULT NOW(),
-       accountuuid UUID NOT NULL,
-       previousemailaddress VARCHAR(255),
-       newemailaddress VARCHAR(255) UNIQUE NOT NULL,
-       resettoken VARCHAR(255) NOT NULL
+       randid VARCHAR(255) UNIQUE,
+       created_at TIMESTAMP DEFAULT NOW(),
+       updated_at TIMESTAMP DEFAULT NOW(),
+       account_uuid UUID NOT NULL,
+       previous_email_address VARCHAR(255),
+       new_email_address VARCHAR(255) UNIQUE NOT NULL,
+       reset_token VARCHAR(255) NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_accountuuid ON ` + tableName + `(accountuuid);
-    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_newemail ON ` + tableName + `(newemailaddress);`
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_new_email_address ON ` + tableName + `(new_email_address);`
+
+	_, err := db.Exec(query)
+	return err
+}
+
+func CreateSessionTableSQL(db *sql.DB, entityName string) error {
+	tableName := entityName + "_session"
+	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
+       uuid VARCHAR(255) PRIMARY KEY,
+       randid VARCHAR(255) UNIQUE,
+       created_at TIMESTAMP DEFAULT NOW(),
+       updated_at TIMESTAMP DEFAULT NOW(),
+       last_active_at TIMESTAMP DEFAULT NOW(),
+       account_uuid VARCHAR(255) NOT NULL,
+       device_id VARCHAR(255),
+       device_info TEXT,
+       user_agent TEXT,
+       refresh_token VARCHAR(255) UNIQUE NOT NULL,
+       expires_at TIMESTAMP NOT NULL,
+       is_active BOOLEAN DEFAULT TRUE,
+       deactivated_at TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_refresh_token ON ` + tableName + `(refresh_token);
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_randid ON ` + tableName + `(randid);
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_expires_at ON ` + tableName + `(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_is_active ON ` + tableName + `(is_active);`
 
 	_, err := db.Exec(query)
 	return err

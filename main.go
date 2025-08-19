@@ -11,7 +11,7 @@ func NewAccountManagerSQL(db *sql.DB, redis redis.UniversalClient, entityName st
 	return postgresql.NewAccountManagerSQL(db, redis, entityName)
 }
 
-func NewAccountFetchers(redis redis.UniversalClient, entityName string) *postgresql.AccountFetchers {
+func NewAccountFetchersSQL(redis redis.UniversalClient, entityName string) *postgresql.AccountFetchers {
 	return postgresql.NewAccountFetchers(redis, entityName)
 }
 

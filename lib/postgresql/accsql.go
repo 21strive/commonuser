@@ -64,7 +64,7 @@ type AccountManagerSQL struct {
 }
 
 func (asql *AccountManagerSQL) Create(account AccountSQL) error {
-	query := "INSERT INTO " + asql.entityName + " (uuid, randid, createdat, updatedat, name, username, password, email, avatar, suspended) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
+	query := "INSERT INTO " + asql.entityName + " (uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
 	_, errInsert := asql.db.Exec(query, account.GetUUID(), account.GetRandId(), account.GetCreatedAt(), account.GetUpdatedAt(), account.Name, account.Username, account.Password, account.Email, account.Avatar, account.Suspended)
 	if errInsert != nil {
 		return errInsert
@@ -78,7 +78,7 @@ func (asql *AccountManagerSQL) Create(account AccountSQL) error {
 }
 
 func (asql *AccountManagerSQL) Patch(account AccountSQL) error {
-	query := "UPDATE " + asql.entityName + " SET updatedat = $1, name = $2, avatar = $3 WHERE uuid = $4"
+	query := "UPDATE " + asql.entityName + " SET updated_at = $1, name = $2, avatar = $3 WHERE uuid = $4"
 	_, errUpdate := asql.db.Exec(query, account.GetUpdatedAt(), account.Name, account.Avatar, account.GetUUID())
 	if errUpdate != nil {
 		return errUpdate
@@ -112,7 +112,7 @@ func (asql *AccountManagerSQL) setAccountToCache(account AccountSQL) error {
 }
 
 func (asql *AccountManagerSQL) FindByUsername(username string) (*AccountSQL, error) {
-	query := "SELECT uuid, randid, createdat, updatedat, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE username = $1"
+	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE username = $1"
 	return findOneAccount(asql.db, query, username)
 }
 
@@ -133,7 +133,7 @@ func (asql *AccountManagerSQL) SeedByUsername(username string) error {
 }
 
 func (asql *AccountManagerSQL) FindByRandId(randId string) (*AccountSQL, error) {
-	query := "SELECT uuid, randid, createdat, updatedat, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE randId = $1"
+	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE randId = $1"
 	return findOneAccount(asql.db, query, randId)
 }
 
@@ -154,7 +154,7 @@ func (asql *AccountManagerSQL) SeedByRandId(randId string) error {
 }
 
 func (asql *AccountManagerSQL) FindByEmail(email string) (*AccountSQL, error) {
-	query := "SELECT uuid, randid, createdat, updatedat, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE email = $1"
+	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE email = $1"
 	return findOneAccount(asql.db, query, email)
 }
 
@@ -175,7 +175,7 @@ func (asql *AccountManagerSQL) SeedByEmail(email string) error {
 }
 
 func (asql *AccountManagerSQL) FindByUUID(uuid string) (*AccountSQL, error) {
-	query := "SELECT uuid, randid, createdat, updatedat, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE uuid = $1"
+	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE uuid = $1"
 	return findOneAccount(asql.db, query, uuid)
 }
 
