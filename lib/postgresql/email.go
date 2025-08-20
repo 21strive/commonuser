@@ -67,7 +67,7 @@ func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddre
 	updateEmailRequest.SetResetToken()
 	updateEmailRequest.SetExpiration()
 
-	tableName := em.entityName + "UpdateEmailManagerSQL"
+	tableName := em.entityName + "_update_email"
 
 	query := `INSERT INTO ` + tableName + ` (uuid, randId, created_at, updated_at, account_uuid, previous_email_address, new_email_address, update_token, expired_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	_, errInsert := em.db.Exec(
@@ -89,7 +89,8 @@ func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddre
 }
 
 func (em *UpdateEmailManagerSQL) FindRequest(account AccountSQL) (*UpdateEmailRequestSQL, error) {
-	query := `SELECT * FROM ` + em.entityName + `update_email WHERE account_uuid = $1`
+	tableName := em.entityName + "_update_email"
+	query := `SELECT * FROM ` + tableName + ` WHERE account_uuid = $1`
 	row := em.db.QueryRow(query, account.GetUUID())
 	updateEmailRequest := NewUpdateEmailRequestSQL()
 	err := row.Scan(
@@ -123,7 +124,8 @@ func (em *UpdateEmailManagerSQL) FindRequest(account AccountSQL) (*UpdateEmailRe
 }
 
 func (em *UpdateEmailManagerSQL) DeleteRequest(request *UpdateEmailRequestSQL) error {
-	query := `DELETE FROM ` + em.entityName + `UpdateEmailManagerSQL WHERE uuid = $1`
+	tableName := em.entityName + "_update_email"
+	query := `DELETE FROM ` + tableName + ` WHERE uuid = $1`
 	_, errDelete := em.db.Exec(query, request.GetUUID())
 	if errDelete != nil {
 		return errDelete

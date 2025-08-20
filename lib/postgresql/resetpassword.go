@@ -56,8 +56,8 @@ func (ar *ResetPasswordManagerSQL) Create(account *AccountSQL) (*ResetPasswordRe
 	requestResetPassword.SetToken()
 	requestResetPassword.SetExpiredAt()
 
-	tableName := ar.entityName + "ResetPassword"
-	query := `INSERT INTO $1 (uuid, randId, created_at, updated_at, accountuuid, token, expiredat) VALUES ($2, $3, $4, $5, $6, $7, $8)`
+	tableName := ar.entityName + "_reset_password"
+	query := `INSERT INTO $1 (uuid, randId, created_at, updated_at, account_uuid, token, expiredat) VALUES ($2, $3, $4, $5, $6, $7, $8)`
 	_, errInsert := ar.db.Exec(
 		query,
 		tableName,
@@ -77,8 +77,8 @@ func (ar *ResetPasswordManagerSQL) Create(account *AccountSQL) (*ResetPasswordRe
 }
 
 func (ar *ResetPasswordManagerSQL) Find(account *AccountSQL) (*ResetPasswordRequestSQL, error) {
-	tableName := ar.entityName + "ResetPassword"
-	query := "SELECT * FROM " + tableName + "ResetPassword WHERE accountuuid = $1"
+	tableName := ar.entityName + "_reset_password"
+	query := "SELECT * FROM " + tableName + " WHERE accountuuid = $1"
 	row := ar.db.QueryRow(query, account.Email)
 	resetPasswordRequest := NewResetPasswordSQL()
 	err := row.Scan(
@@ -112,8 +112,8 @@ func (ar *ResetPasswordManagerSQL) Find(account *AccountSQL) (*ResetPasswordRequ
 }
 
 func (ar *ResetPasswordManagerSQL) Delete(requestSQL *ResetPasswordRequestSQL) error {
-	tableName := ar.entityName + "ResetPassword"
-	query := "DELETE FROM " + tableName + "ResetPassword WHERE uuid = $1"
+	tableName := ar.entityName + "_reset_password"
+	query := "DELETE FROM " + tableName + " WHERE uuid = $1"
 	_, errDelete := ar.db.Exec(query, requestSQL.GetUUID())
 	if errDelete != nil {
 		return errDelete
