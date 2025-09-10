@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"github.com/21strive/commonuser/definition"
+	"github.com/21strive/item"
 	"github.com/21strive/redifu"
 	"time"
 )
@@ -29,7 +30,7 @@ func (ue *UpdateEmailRequestSQL) SetNewEmailAddress(email string) {
 }
 
 func (ue *UpdateEmailRequestSQL) SetResetToken() {
-	token := redifu.RandId()
+	token := item.RandId()
 	ue.UpdateToken = token
 }
 

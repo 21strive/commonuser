@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/21strive/commonuser/definition"
 	"github.com/21strive/commonuser/lib"
 	"github.com/21strive/redifu"
+	seeder "github.com/21strive/redifu/seeder/sql"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 	"time"
@@ -57,10 +59,12 @@ func NewAccountSQL() AccountSQL {
 }
 
 type AccountManagerSQL struct {
-	db         *sql.DB
-	base       *redifu.Base[AccountSQL]
-	redis      redis.UniversalClient
-	entityName string
+	db                  *sql.DB
+	redis               redis.UniversalClient
+	base                *redifu.Base[AccountSQL]
+	sortedAccount       *redifu.Sorted[AccountSQL]
+	sortedAccountSeeder *seeder.SortedSQLSeeder[AccountSQL]
+	entityName          string
 }
 
 func (asql *AccountManagerSQL) Create(account AccountSQL) error {
@@ -109,6 +113,34 @@ func (asql *AccountManagerSQL) setAccountToCache(account AccountSQL) error {
 		}
 	}
 	return nil
+}
+
+func (asql *AccountManagerSQL) SeedAllAccount() error {
+	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName
+	rows, err := asql.db.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	return asql.sortedAccountSeeder.SeedAll(query, accountRowsScanner, nil, nil)
+}
+
+func accountRowsScanner(rows *sql.Rows) (AccountSQL, error) {
+	account := NewAccountSQL()
+	err := rows.Scan(
+		&account.SQLItem.UUID,
+		&account.SQLItem.RandId,
+		&account.SQLItem.CreatedAt,
+		&account.SQLItem.UpdatedAt,
+		&account.Base.Name,
+		&account.Base.Username,
+		&account.Base.Password,
+		&account.Base.Email,
+		&account.Base.Avatar,
+		&account.Base.Suspended,
+	)
+	return account, err
 }
 
 func (asql *AccountManagerSQL) FindByUsername(username string) (*AccountSQL, error) {
@@ -196,11 +228,16 @@ func (asql *AccountManagerSQL) SeedByUUID(uuid string) error {
 }
 
 func NewAccountManagerSQL(db *sql.DB, redis redis.UniversalClient, entityName string) *AccountManagerSQL {
-	base := redifu.NewBase[AccountSQL](redis, entityName+":%s")
+	base := redifu.NewBase[AccountSQL](redis, entityName+":%s", definition.BaseTTL)
+	sortedAccount := redifu.NewSorted[AccountSQL](redis, base, "account", definition.SortedSetTTL)
+	sortedAccountSeeder := seeder.NewSortedSQLSeeder[AccountSQL](db, base, sortedAccount)
 	return &AccountManagerSQL{
-		db:         db,
-		base:       base,
-		entityName: entityName,
+		db:                  db,
+		base:                base,
+		entityName:          entityName,
+		sortedAccount:       sortedAccount,
+		sortedAccountSeeder: sortedAccountSeeder,
+		redis:               redis,
 	}
 }
 

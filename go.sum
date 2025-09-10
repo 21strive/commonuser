@@ -6,6 +6,11 @@ github.com/21strive/redifu v0.8.0 h1:sfkJSjyoVdFpSx5/PDwyofo5w/ZJXsoSaA7KWGEBT+U
 github.com/21strive/redifu v0.8.0/go.mod h1:sQI0h5dSKtB/6UjTNvRpWn+1Q/v47Rp/4XK+J8Sgs80=
 github.com/21strive/redifu v0.9.1 h1:t1GlMuhkkGSzh+IRCMO6IQ9NTwJiyZn7hDRU4YB8dcw=
 github.com/21strive/redifu v0.9.1/go.mod h1:tm223mkZW/MLautwn3eKkdDTNS1qnTm/ALSFL/UBBzo=
+github.com/21strive/redifu v0.10.0 h1:nXCgMLdHtT7JYyb96X4CdPy+mYcJKyE4EyBO8tg6wyQ=
+github.com/21strive/redifu v0.10.0/go.mod h1:tm223mkZW/MLautwn3eKkdDTNS1qnTm/ALSFL/UBBzo=
+github.com/21strive/redifu v0.11.0/go.mod h1:tm223mkZW/MLautwn3eKkdDTNS1qnTm/ALSFL/UBBzo=
+github.com/21strive/redifu v0.12.0 h1:emlug37CFFptNZAPM7DTAVxzU2NFitZ/M6nrQW6zu0w=
+github.com/21strive/redifu v0.12.0/go.mod h1:tm223mkZW/MLautwn3eKkdDTNS1qnTm/ALSFL/UBBzo=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=
 github.com/bsm/ginkgo/v2 v2.12.0/go.mod h1:SwYbGRRDovPVboqFv0tPTcG1sN61LM1Z4ARdbAV9g4c=
 github.com/bsm/gomega v1.27.10 h1:yeMWxP2pV2fG3FgAODIY8EiRE3dy0aeFYt4l7wh6yKA=

@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"github.com/21strive/commonuser/definition"
+	"github.com/21strive/item"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 	"time"
@@ -20,7 +21,7 @@ func (rpsql *ResetPasswordRequestSQL) SetAccountUUID(account *AccountSQL) {
 }
 
 func (rpsql *ResetPasswordRequestSQL) SetToken() {
-	rpsql.Token = redifu.RandId()
+	rpsql.Token = item.RandId()
 }
 
 func (rpsql *ResetPasswordRequestSQL) SetExpiredAt() {
@@ -122,7 +123,7 @@ func (ar *ResetPasswordManagerSQL) Delete(requestSQL *ResetPasswordRequestSQL) e
 }
 
 func NewResetPasswordManagerSQL(db *sql.DB, redis redis.UniversalClient, entityName string) *ResetPasswordManagerSQL {
-	base := redifu.NewBase[AccountSQL](redis, entityName+":%s")
+	base := redifu.NewBase[AccountSQL](redis, entityName+":%s", definition.BaseTTL)
 	return &ResetPasswordManagerSQL{
 		base: base,
 		db:   db,

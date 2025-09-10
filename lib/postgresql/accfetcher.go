@@ -3,14 +3,16 @@ package postgresql
 import (
 	"context"
 	"errors"
+	"github.com/21strive/commonuser/definition"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 )
 
 type AccountFetchers struct {
-	redis      redis.UniversalClient
-	base       *redifu.Base[AccountSQL]
-	entityName string
+	redis         redis.UniversalClient
+	base          *redifu.Base[AccountSQL]
+	sortedAccount *redifu.Sorted[AccountSQL]
+	entityName    string
 }
 
 func (af *AccountFetchers) FetchByUsername(username string) (*AccountSQL, error) {
@@ -43,11 +45,21 @@ func (af *AccountFetchers) FetchByRandId(randId string) (*AccountSQL, error) {
 	return &account, nil
 }
 
+func (af *AccountFetchers) FetchAll(sortDir string) ([]AccountSQL, error) {
+	account, err := af.sortedAccount.Fetch(nil, sortDir, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return account, nil
+}
+
 func NewAccountFetchers(redis redis.UniversalClient, entityName string) *AccountFetchers {
-	base := redifu.NewBase[AccountSQL](redis, entityName+":%s")
+	base := redifu.NewBase[AccountSQL](redis, entityName+":%s", definition.BaseTTL)
+	sortedAccount := redifu.NewSorted[AccountSQL](redis, base, "account", definition.SortedSetTTL)
 	return &AccountFetchers{
-		redis:      redis,
-		base:       base,
-		entityName: entityName,
+		redis:         redis,
+		base:          base,
+		sortedAccount: sortedAccount,
+		entityName:    entityName,
 	}
 }

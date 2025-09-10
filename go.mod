@@ -4,7 +4,7 @@ go 1.23.7
 
 require (
 	github.com/21strive/item v0.2.0
-	github.com/21strive/redifu v0.9.1
+	github.com/21strive/redifu v0.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/matthewhartstonge/argon2 v1.3.3
 	github.com/redis/go-redis/v9 v9.7.0
