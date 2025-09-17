@@ -1,60 +1,9 @@
-package postgresql
+package commonuser
 
 import (
 	"database/sql"
-	"github.com/21strive/commonuser/definition"
-	"github.com/21strive/item"
-	"github.com/21strive/redifu"
 	"time"
 )
-
-type UpdateEmailRequestSQL struct {
-	*redifu.SQLItem      `bson:",inline" json:",inline"`
-	AccountUUID          string    `db:"account_uuid"`
-	PreviousEmailAddress string    `db:"previous_email_address"`
-	NewEmailAddress      string    `db:"new_email_address"`
-	UpdateToken          string    `db:"update_token"`
-	ExpiredAt            time.Time `db:"expired_at"`
-}
-
-func (ue *UpdateEmailRequestSQL) SetAccountUUID(account *AccountSQL) {
-	ue.AccountUUID = account.UUID
-}
-
-func (ue *UpdateEmailRequestSQL) SetPreviousEmailAddress(email string) {
-	ue.PreviousEmailAddress = email
-}
-
-func (ue *UpdateEmailRequestSQL) SetNewEmailAddress(email string) {
-	ue.NewEmailAddress = email
-}
-
-func (ue *UpdateEmailRequestSQL) SetResetToken() {
-	token := item.RandId()
-	ue.UpdateToken = token
-}
-
-func (ue *UpdateEmailRequestSQL) SetExpiration() {
-	ue.ExpiredAt = time.Now().Add(time.Hour * 48)
-}
-
-func (ue *UpdateEmailRequestSQL) Validate(updateToken string) error {
-	time := time.Now().UTC()
-	if time.After(ue.ExpiredAt) {
-		return definition.RequestExpired
-	}
-
-	if ue.UpdateToken != updateToken {
-		return definition.InvalidToken
-	}
-	return nil
-}
-
-func NewUpdateEmailRequestSQL() *UpdateEmailRequestSQL {
-	ue := &UpdateEmailRequestSQL{}
-	redifu.InitSQLItem(ue)
-	return ue
-}
 
 type UpdateEmailManagerSQL struct {
 	db         *sql.DB
@@ -86,7 +35,7 @@ func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddre
 		return nil, errInsert
 	}
 
-	return updateEmailRequest, nil
+	return &updateEmailRequest, nil
 }
 
 func (em *UpdateEmailManagerSQL) FindRequest(account AccountSQL) (*UpdateEmailRequestSQL, error) {
@@ -112,16 +61,16 @@ func (em *UpdateEmailManagerSQL) FindRequest(account AccountSQL) (*UpdateEmailRe
 	}
 
 	if updateEmailRequest.ExpiredAt.Before(time.Now().UTC()) {
-		em.DeleteRequest(updateEmailRequest)
+		em.DeleteRequest(&updateEmailRequest)
 		newUpdateEmailRequest, err := em.CreateRequest(account, updateEmailRequest.NewEmailAddress)
 		if err != nil {
 			return nil, err
 		}
 		return newUpdateEmailRequest, nil
 	} else {
-		return nil, definition.RequestExist
+		return nil, RequestExist
 	}
-	return updateEmailRequest, nil
+	return &updateEmailRequest, nil
 }
 
 func (em *UpdateEmailManagerSQL) DeleteRequest(request *UpdateEmailRequestSQL) error {
@@ -140,13 +89,13 @@ func (em *UpdateEmailManagerSQL) ValidateRequest(account AccountSQL, updateToken
 		return errFind
 	}
 	if request == nil {
-		return definition.RequestNotFound
+		return RequestNotFound
 	}
 	errValidate := request.Validate(updateToken)
 	if errValidate != nil {
-		if errValidate == definition.RequestExpired {
+		if errValidate == RequestExpired {
 			em.DeleteRequest(request)
-			return definition.RequestExpired
+			return RequestExpired
 		}
 		return errValidate
 	}

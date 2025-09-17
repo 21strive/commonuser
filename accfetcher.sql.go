@@ -1,21 +1,20 @@
-package postgresql
+package commonuser
 
 import (
 	"context"
 	"errors"
-	"github.com/21strive/commonuser/definition"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 )
 
-type AccountFetchers struct {
+type AccountFetchersSQL struct {
 	redis         redis.UniversalClient
 	base          *redifu.Base[AccountSQL]
 	sortedAccount *redifu.Sorted[AccountSQL]
 	entityName    string
 }
 
-func (af *AccountFetchers) FetchByUsername(username string) (*AccountSQL, error) {
+func (af *AccountFetchersSQL) FetchByUsername(username string) (*AccountSQL, error) {
 	getRandID := af.redis.Get(context.TODO(), af.entityName+":username:"+username)
 	if getRandID.Err() != nil {
 		if getRandID.Err() == redis.Nil {
@@ -34,7 +33,7 @@ func (af *AccountFetchers) FetchByUsername(username string) (*AccountSQL, error)
 	return &account, nil
 }
 
-func (af *AccountFetchers) FetchByRandId(randId string) (*AccountSQL, error) {
+func (af *AccountFetchersSQL) FetchByRandId(randId string) (*AccountSQL, error) {
 	account, err := af.base.Get(randId)
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
@@ -45,7 +44,7 @@ func (af *AccountFetchers) FetchByRandId(randId string) (*AccountSQL, error) {
 	return &account, nil
 }
 
-func (af *AccountFetchers) FetchAll(sortDir string) ([]AccountSQL, error) {
+func (af *AccountFetchersSQL) FetchAll(sortDir string) ([]AccountSQL, error) {
 	account, err := af.sortedAccount.Fetch(nil, sortDir, nil, nil)
 	if err != nil {
 		return nil, err
@@ -53,10 +52,10 @@ func (af *AccountFetchers) FetchAll(sortDir string) ([]AccountSQL, error) {
 	return account, nil
 }
 
-func NewAccountFetchers(redis redis.UniversalClient, entityName string) *AccountFetchers {
-	base := redifu.NewBase[AccountSQL](redis, entityName+":%s", definition.BaseTTL)
-	sortedAccount := redifu.NewSorted[AccountSQL](redis, base, "account", definition.SortedSetTTL)
-	return &AccountFetchers{
+func NewAccountFetchers(redis redis.UniversalClient, entityName string) *AccountFetchersSQL {
+	base := redifu.NewBase[AccountSQL](redis, entityName+":%s", BaseTTL)
+	sortedAccount := redifu.NewSorted[AccountSQL](redis, base, "account", SortedSetTTL)
+	return &AccountFetchersSQL{
 		redis:         redis,
 		base:          base,
 		sortedAccount: sortedAccount,

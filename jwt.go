@@ -1,8 +1,7 @@
-package lib
+package commonuser
 
 import (
 	"fmt"
-	"github.com/21strive/commonuser/definition"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -27,7 +26,7 @@ func (jh *JWTHandler) ParseJWT(jwtToken string, expectedStruct interface{ jwt.Cl
 	if claims, ok := claimedToken.Claims.(interface{ jwt.Claims }); ok && claimedToken.Valid {
 		return claims, nil
 	} else {
-		return nil, definition.Unauthorized
+		return nil, Unauthorized
 	}
 }
 

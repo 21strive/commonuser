@@ -1,49 +1,11 @@
-package postgresql
+package commonuser
 
 import (
 	"database/sql"
-	"github.com/21strive/commonuser/definition"
-	"github.com/21strive/item"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 	"time"
 )
-
-type ResetPasswordRequestSQL struct {
-	*redifu.SQLItem `bson:",inline" json:",inline"`
-	AccountUUID     string    `db:"accountuuid"`
-	Token           string    `db:"token"`
-	ExpiredAt       time.Time `db:"expiredat"`
-}
-
-func (rpsql *ResetPasswordRequestSQL) SetAccountUUID(account *AccountSQL) {
-	rpsql.AccountUUID = account.GetUUID()
-}
-
-func (rpsql *ResetPasswordRequestSQL) SetToken() {
-	rpsql.Token = item.RandId()
-}
-
-func (rpsql *ResetPasswordRequestSQL) SetExpiredAt() {
-	rpsql.ExpiredAt = time.Now().Add(time.Hour * 48)
-}
-
-func (rpsql *ResetPasswordRequestSQL) Validate(token string) error {
-	time := time.Now().UTC()
-	if time.After(rpsql.ExpiredAt) {
-		return definition.RequestExpired
-	}
-	if rpsql.Token != token {
-		return definition.InvalidToken
-	}
-	return nil
-}
-
-func NewResetPasswordSQL() *ResetPasswordRequestSQL {
-	request := &ResetPasswordRequestSQL{}
-	redifu.InitSQLItem(request)
-	return request
-}
 
 type ResetPasswordManagerSQL struct {
 	base       *redifu.Base[AccountSQL]
@@ -74,7 +36,7 @@ func (ar *ResetPasswordManagerSQL) Create(account *AccountSQL) (*ResetPasswordRe
 		return nil, errInsert
 	}
 
-	return requestResetPassword, nil
+	return &requestResetPassword, nil
 }
 
 func (ar *ResetPasswordManagerSQL) Find(account *AccountSQL) (*ResetPasswordRequestSQL, error) {
@@ -99,17 +61,17 @@ func (ar *ResetPasswordManagerSQL) Find(account *AccountSQL) (*ResetPasswordRequ
 	}
 
 	if resetPasswordRequest.ExpiredAt.Before(time.Now().UTC()) {
-		ar.Delete(resetPasswordRequest)
+		ar.Delete(&resetPasswordRequest)
 		newResetPasswordRequest, err := ar.Create(account)
 		if err != nil {
 			return nil, err
 		}
 		return newResetPasswordRequest, nil
 	} else {
-		return nil, definition.RequestExist
+		return nil, RequestExist
 	}
 
-	return resetPasswordRequest, nil
+	return &resetPasswordRequest, nil
 }
 
 func (ar *ResetPasswordManagerSQL) Delete(requestSQL *ResetPasswordRequestSQL) error {
@@ -123,7 +85,7 @@ func (ar *ResetPasswordManagerSQL) Delete(requestSQL *ResetPasswordRequestSQL) e
 }
 
 func NewResetPasswordManagerSQL(db *sql.DB, redis redis.UniversalClient, entityName string) *ResetPasswordManagerSQL {
-	base := redifu.NewBase[AccountSQL](redis, entityName+":%s", definition.BaseTTL)
+	base := redifu.NewBase[AccountSQL](redis, entityName+":%s", BaseTTL)
 	return &ResetPasswordManagerSQL{
 		base: base,
 		db:   db,

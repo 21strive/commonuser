@@ -1,25 +1,11 @@
-package postgresql
+package commonuser
 
 import (
 	"database/sql"
-	"github.com/21strive/commonuser/definition"
-	"github.com/21strive/commonuser/lib"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 	"time"
 )
-
-type SessionSQL struct {
-	*redifu.SQLItem `bson:",inline" json:",inline"`
-	lib.Session
-}
-
-func NewSessionSQL() *SessionSQL {
-	session := &SessionSQL{}
-	redifu.InitSQLItem(session)
-	session.IsActive = true // active by default
-	return session
-}
 
 type SessionManagerSQL struct {
 	base       *redifu.Base[SessionSQL]
@@ -27,7 +13,7 @@ type SessionManagerSQL struct {
 	entityName string
 }
 
-func (sm *SessionManagerSQL) Create(session SessionSQL) error {
+func (sm *SessionManagerSQL) Create(session *SessionSQL) error {
 	tableName := sm.entityName + "_session"
 	query := `INSERT INTO ` + tableName + ` (uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 	_, err := sm.db.Exec(query,
@@ -47,7 +33,7 @@ func (sm *SessionManagerSQL) Create(session SessionSQL) error {
 		return err
 	}
 
-	return sm.base.Set(session, session.RefreshToken)
+	return sm.base.Set(*session, session.RefreshToken)
 }
 
 func (sm *SessionManagerSQL) Update(session *SessionSQL) error {
@@ -163,7 +149,7 @@ func (sm *SessionManagerSQL) FindByAccountUUID(accountUUID string) ([]SessionSQL
 }
 
 func NewSessionManagerSQL(db *sql.DB, redis redis.UniversalClient, entityName string) *SessionManagerSQL {
-	base := redifu.NewBase[SessionSQL](redis, entityName+":session:%s", definition.BaseTTL)
+	base := redifu.NewBase[SessionSQL](redis, entityName+":session:%s", BaseTTL)
 	return &SessionManagerSQL{
 		base:       base,
 		db:         db,

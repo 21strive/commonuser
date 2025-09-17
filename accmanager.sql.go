@@ -1,116 +1,83 @@
-package postgresql
+package commonuser
 
 import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/21strive/commonuser/definition"
-	"github.com/21strive/commonuser/lib"
 	"github.com/21strive/redifu"
-	seeder "github.com/21strive/redifu/seeder/sql"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 	"time"
 )
-
-type AccountSQL struct {
-	*redifu.SQLItem
-	lib.Base
-}
-
-func (asql *AccountSQL) GenerateAccessToken(jwtSecret string, jwtTokenIssuer string, jwtTokenLifeSpan time.Duration, sessionID string) (string, error) {
-	timeNow := time.Now().UTC()
-	expirestAt := timeNow.Add(jwtTokenLifeSpan)
-
-	userClaims := lib.UserClaims{
-		UUID:      asql.GetUUID(),
-		RandId:    asql.GetRandId(),
-		Name:      asql.Name,
-		Username:  asql.Username,
-		Email:     asql.Email,
-		Avatar:    asql.Avatar,
-		SessionID: sessionID,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer: jwtTokenIssuer,
-			IssuedAt: &jwt.NumericDate{
-				Time: timeNow,
-			},
-			ExpiresAt: &jwt.NumericDate{
-				Time: expirestAt,
-			},
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, userClaims)
-	tokenString, err := token.SignedString([]byte(jwtSecret))
-	if err != nil {
-		return "", err
-	}
-
-	return tokenString, nil
-}
-
-func NewAccountSQL() AccountSQL {
-	account := AccountSQL{
-		Base: lib.Base{},
-	}
-	redifu.InitSQLItem(&account)
-	return account
-}
 
 type AccountManagerSQL struct {
 	db                  *sql.DB
 	redis               redis.UniversalClient
 	base                *redifu.Base[AccountSQL]
 	sortedAccount       *redifu.Sorted[AccountSQL]
-	sortedAccountSeeder *seeder.SortedSQLSeeder[AccountSQL]
+	sortedAccountSeeder *redifu.SortedSQLSeeder[AccountSQL]
 	entityName          string
 }
 
-func (asql *AccountManagerSQL) Create(account AccountSQL) error {
+func (asql *AccountManagerSQL) Create(account *AccountSQL) error {
 	query := "INSERT INTO " + asql.entityName + " (uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
 	_, errInsert := asql.db.Exec(query, account.GetUUID(), account.GetRandId(), account.GetCreatedAt(), account.GetUpdatedAt(), account.Name, account.Username, account.Password, account.Email, account.Avatar, account.Suspended)
 	if errInsert != nil {
 		return errInsert
 	}
 	if account.Username != "" {
-		asql.base.Set(account, account.Username)
+		asql.base.Set(*account, account.Username)
 	} else {
-		asql.base.Set(account)
+		asql.base.Set(*account)
 	}
+
+	asql.sortedAccount.AddItem(*account, nil)
 	return nil
 }
 
-func (asql *AccountManagerSQL) Patch(account AccountSQL) error {
+func (asql *AccountManagerSQL) Patch(account *AccountSQL) error {
 	query := "UPDATE " + asql.entityName + " SET updated_at = $1, name = $2, avatar = $3 WHERE uuid = $4"
 	_, errUpdate := asql.db.Exec(query, account.GetUpdatedAt(), account.Name, account.Avatar, account.GetUUID())
 	if errUpdate != nil {
 		return errUpdate
 	}
+
+	if account.Username != "" {
+		asql.base.Set(*account, account.Username)
+	} else {
+		asql.base.Set(*account)
+	}
+
 	return nil
 }
 
-func (asql *AccountManagerSQL) Delete(account AccountSQL) error {
+func (asql *AccountManagerSQL) Delete(account *AccountSQL) error {
 	query := "DELETE FROM " + asql.entityName + " WHERE uuid = $1"
 	_, errDelete := asql.db.Exec(query, account.GetUUID())
 	if errDelete != nil {
 		return errDelete
 	}
+
+	if account.Username != "" {
+		asql.base.Del(*account, account.Username)
+	} else {
+		asql.base.Del(*account)
+	}
+
 	return nil
 }
 
-func (asql *AccountManagerSQL) setAccountToCache(account AccountSQL) error {
-	errSetAcc := asql.base.Set(account)
-	if errSetAcc != nil {
-		return errSetAcc
-	}
-
+func (asql *AccountManagerSQL) setAccountToCache(account *AccountSQL) error {
 	if account.Username != "" {
 		key := asql.entityName + ":username:" + account.Username
 		setReference := asql.redis.Set(context.TODO(), key, account.GetRandId(), 7*24*time.Hour)
 		if setReference.Err() != nil {
 			return setReference.Err()
 		}
+	}
+
+	errSetAcc := asql.base.Set(*account)
+	if errSetAcc != nil {
+		return errSetAcc
 	}
 	return nil
 }
@@ -140,7 +107,7 @@ func accountRowsScanner(rows *sql.Rows) (AccountSQL, error) {
 		&account.Base.Avatar,
 		&account.Base.Suspended,
 	)
-	return account, err
+	return *account, err
 }
 
 func (asql *AccountManagerSQL) FindByUsername(username string) (*AccountSQL, error) {
@@ -157,7 +124,7 @@ func (asql *AccountManagerSQL) SeedByUsername(username string) error {
 		return errors.New("account not found")
 	}
 
-	errSetAcc := asql.setAccountToCache(*account)
+	errSetAcc := asql.setAccountToCache(account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
@@ -178,7 +145,7 @@ func (asql *AccountManagerSQL) SeedByRandId(randId string) error {
 		return errors.New("account not found")
 	}
 
-	errSetAcc := asql.setAccountToCache(*account)
+	errSetAcc := asql.setAccountToCache(account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
@@ -199,7 +166,7 @@ func (asql *AccountManagerSQL) SeedByEmail(email string) error {
 		return errors.New("account not found")
 	}
 
-	errSetAcc := asql.setAccountToCache(*account)
+	errSetAcc := asql.setAccountToCache(account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
@@ -220,7 +187,7 @@ func (asql *AccountManagerSQL) SeedByUUID(uuid string) error {
 		return errors.New("account not found")
 	}
 
-	errSetAcc := asql.setAccountToCache(*account)
+	errSetAcc := asql.setAccountToCache(account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
@@ -228,9 +195,9 @@ func (asql *AccountManagerSQL) SeedByUUID(uuid string) error {
 }
 
 func NewAccountManagerSQL(db *sql.DB, redis redis.UniversalClient, entityName string) *AccountManagerSQL {
-	base := redifu.NewBase[AccountSQL](redis, entityName+":%s", definition.BaseTTL)
-	sortedAccount := redifu.NewSorted[AccountSQL](redis, base, "account", definition.SortedSetTTL)
-	sortedAccountSeeder := seeder.NewSortedSQLSeeder[AccountSQL](db, base, sortedAccount)
+	base := redifu.NewBase[AccountSQL](redis, entityName+":%s", BaseTTL)
+	sortedAccount := redifu.NewSorted[AccountSQL](redis, base, "account", SortedSetTTL)
+	sortedAccountSeeder := redifu.NewSortedSQLSeeder[AccountSQL](db, base, sortedAccount)
 	return &AccountManagerSQL{
 		db:                  db,
 		base:                base,
@@ -264,5 +231,5 @@ func findOneAccount(db *sql.DB, query string, param string) (*AccountSQL, error)
 		return nil, err
 	}
 
-	return &account, nil
+	return account, nil
 }
