@@ -24,10 +24,10 @@ func (asql *AccountManagerSQL) Create(account *AccountSQL) error {
 	if errInsert != nil {
 		return errInsert
 	}
-	if account.Username != "" {
-		asql.base.Set(*account, account.Username)
-	} else {
-		asql.base.Set(*account)
+
+	errSet := asql.setAccount(account)
+	if errSet != nil {
+		return errSet
 	}
 
 	asql.sortedAccount.AddItem(*account, nil)
@@ -41,10 +41,9 @@ func (asql *AccountManagerSQL) Patch(account *AccountSQL) error {
 		return errUpdate
 	}
 
-	if account.Username != "" {
-		asql.base.Set(*account, account.Username)
-	} else {
-		asql.base.Set(*account)
+	errSet := asql.setAccount(account)
+	if errSet != nil {
+		return errSet
 	}
 
 	return nil
@@ -57,16 +56,17 @@ func (asql *AccountManagerSQL) Delete(account *AccountSQL) error {
 		return errDelete
 	}
 
-	if account.Username != "" {
-		asql.base.Del(*account, account.Username)
-	} else {
-		asql.base.Del(*account)
+	errDel := asql.delAccount(account)
+	if errDel != nil {
+		return errDel
 	}
+
+	asql.sortedAccount.RemoveItem(*account, nil)
 
 	return nil
 }
 
-func (asql *AccountManagerSQL) setAccountToCache(account *AccountSQL) error {
+func (asql *AccountManagerSQL) setAccount(account *AccountSQL) error {
 	if account.Username != "" {
 		key := asql.entityName + ":username:" + account.Username
 		setReference := asql.redis.Set(context.TODO(), key, account.GetRandId(), 7*24*time.Hour)
@@ -78,6 +78,22 @@ func (asql *AccountManagerSQL) setAccountToCache(account *AccountSQL) error {
 	errSetAcc := asql.base.Set(*account)
 	if errSetAcc != nil {
 		return errSetAcc
+	}
+	return nil
+}
+
+func (asql *AccountManagerSQL) delAccount(account *AccountSQL) error {
+	if account.Username != "" {
+		key := asql.entityName + ":username:" + account.Username
+		delReference := asql.redis.Del(context.TODO(), key)
+		if delReference.Err() != nil {
+			return delReference.Err()
+		}
+	}
+
+	errDelAcc := asql.base.Del(*account)
+	if errDelAcc != nil {
+		return errDelAcc
 	}
 	return nil
 }
@@ -124,7 +140,7 @@ func (asql *AccountManagerSQL) SeedByUsername(username string) error {
 		return errors.New("account not found")
 	}
 
-	errSetAcc := asql.setAccountToCache(account)
+	errSetAcc := asql.setAccount(account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
@@ -145,7 +161,7 @@ func (asql *AccountManagerSQL) SeedByRandId(randId string) error {
 		return errors.New("account not found")
 	}
 
-	errSetAcc := asql.setAccountToCache(account)
+	errSetAcc := asql.setAccount(account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
@@ -166,7 +182,7 @@ func (asql *AccountManagerSQL) SeedByEmail(email string) error {
 		return errors.New("account not found")
 	}
 
-	errSetAcc := asql.setAccountToCache(account)
+	errSetAcc := asql.setAccount(account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
@@ -187,7 +203,7 @@ func (asql *AccountManagerSQL) SeedByUUID(uuid string) error {
 		return errors.New("account not found")
 	}
 
-	errSetAcc := asql.setAccountToCache(account)
+	errSetAcc := asql.setAccount(account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
