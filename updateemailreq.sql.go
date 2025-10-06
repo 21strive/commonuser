@@ -15,7 +15,7 @@ type UpdateEmailRequestSQL struct {
 	ExpiredAt            time.Time `db:"expired_at"`
 }
 
-func (ue *UpdateEmailRequestSQL) SetAccountUUID(account *AccountSQL) {
+func (ue *UpdateEmailRequestSQL) SetAccountUUID(account *Account) {
 	ue.AccountUUID = account.UUID
 }
 

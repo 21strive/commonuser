@@ -7,13 +7,17 @@ import (
 	"time"
 )
 
-type SessionManagerSQL struct {
-	base       *redifu.Base[SessionSQL]
+type SessionRepository struct {
+	base       *redifu.Base[Session]
 	db         *sql.DB
 	entityName string
 }
 
-func (sm *SessionManagerSQL) Create(session *SessionSQL) error {
+func (sm *SessionRepository) Base() *redifu.Base[Session] {
+	return sm.base
+}
+
+func (sm *SessionRepository) Create(session *Session) error {
 	tableName := sm.entityName + "_session"
 	query := `INSERT INTO ` + tableName + ` (uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 	_, err := sm.db.Exec(query,
@@ -36,7 +40,7 @@ func (sm *SessionManagerSQL) Create(session *SessionSQL) error {
 	return sm.base.Set(*session, session.RefreshToken)
 }
 
-func (sm *SessionManagerSQL) Update(session *SessionSQL) error {
+func (sm *SessionRepository) Update(session *Session) error {
 	session.SetUpdatedAt(time.Now().UTC())
 	tableName := sm.entityName + "_session"
 	query := `UPDATE ` + tableName + ` SET last_active_at = $1, is_active = $2, refresh_token = $3 WHERE uuid = $4`
@@ -54,7 +58,7 @@ func (sm *SessionManagerSQL) Update(session *SessionSQL) error {
 	return sm.base.Set(*session, session.RefreshToken)
 }
 
-func (sm *SessionManagerSQL) Deactivate(session *SessionSQL) error {
+func (sm *SessionRepository) Deactivate(session *Session) error {
 	session.SetUpdatedAt(time.Now().UTC())
 	session.IsActive = false
 	session.DeactivatedAt = time.Now().UTC()
@@ -74,10 +78,10 @@ func (sm *SessionManagerSQL) Deactivate(session *SessionSQL) error {
 	return nil
 }
 
-func (sm *SessionManagerSQL) scanSession(scanner interface {
+func (sm *SessionRepository) scanSession(scanner interface {
 	Scan(dest ...interface{}) error
-}) (*SessionSQL, error) {
-	session := NewSessionSQL()
+}) (*Session, error) {
+	session := NewSession()
 	redifu.InitSQLItem(session)
 	err := scanner.Scan(
 		&session.UUID,
@@ -106,7 +110,7 @@ func (sm *SessionManagerSQL) scanSession(scanner interface {
 	return session, nil
 }
 
-func (sm *SessionManagerSQL) FindByHash(hash string) (*SessionSQL, error) {
+func (sm *SessionRepository) FindByHash(hash string) (*Session, error) {
 	tableName := sm.entityName + "_session"
 	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active, COALESCE(deactivated_at, '1970-01-01 00:00:00'::timestamp) FROM ` + tableName + ` WHERE refresh_token = $1`
 	row := sm.db.QueryRow(query, hash)
@@ -114,7 +118,7 @@ func (sm *SessionManagerSQL) FindByHash(hash string) (*SessionSQL, error) {
 	return sm.scanSession(row)
 }
 
-func (sm *SessionManagerSQL) FindByRandId(randId string) (*SessionSQL, error) {
+func (sm *SessionRepository) FindByRandId(randId string) (*Session, error) {
 	tableName := sm.entityName + "_session"
 	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active, COALESCE(deactivated_at, '1970-01-01 00:00:00'::timestamp) FROM ` + tableName + ` WHERE randid = $1`
 	row := sm.db.QueryRow(query, randId)
@@ -122,7 +126,7 @@ func (sm *SessionManagerSQL) FindByRandId(randId string) (*SessionSQL, error) {
 	return sm.scanSession(row)
 }
 
-func (sm *SessionManagerSQL) FindByAccountUUID(accountUUID string) ([]SessionSQL, error) {
+func (sm *SessionRepository) FindByAccountUUID(accountUUID string) ([]Session, error) {
 	tableName := sm.entityName + "_session"
 	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active, COALESCE(deactivated_at, '1970-01-01 00:00:00'::timestamp) FROM ` + tableName + ` WHERE account_uuid = $1`
 	rows, err := sm.db.Query(query, accountUUID)
@@ -131,7 +135,7 @@ func (sm *SessionManagerSQL) FindByAccountUUID(accountUUID string) ([]SessionSQL
 	}
 	defer rows.Close()
 
-	var sessions []SessionSQL
+	var sessions []Session
 	for rows.Next() {
 
 		session, errScan := sm.scanSession(rows)
@@ -148,11 +152,30 @@ func (sm *SessionManagerSQL) FindByAccountUUID(accountUUID string) ([]SessionSQL
 	return sessions, nil
 }
 
-func NewSessionManagerSQL(db *sql.DB, redis redis.UniversalClient, entityName string) *SessionManagerSQL {
-	base := redifu.NewBase[SessionSQL](redis, entityName+":session:%s", BaseTTL)
-	return &SessionManagerSQL{
+func NewSessionRepository(db *sql.DB, redis redis.UniversalClient, entityName string) *SessionRepository {
+	base := redifu.NewBase[Session](redis, entityName+":session:%s", BaseTTL)
+	return &SessionRepository{
 		base:       base,
 		db:         db,
 		entityName: entityName,
+	}
+}
+
+type SessionFetcher struct {
+	base *redifu.Base[Session]
+}
+
+func (sf *SessionFetcher) FetchByRandId(randId string) (*Session, error) {
+	session, err := sf.base.Get(randId)
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+func NewSessionFetcher(client redis.UniversalClient, entityName string) *SessionFetcher {
+	base := redifu.NewBase[Session](client, entityName+":session:%s", BaseTTL)
+	return &SessionFetcher{
+		base: base,
 	}
 }

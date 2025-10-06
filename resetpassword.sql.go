@@ -13,7 +13,7 @@ type ResetPasswordRequestSQL struct {
 	ExpiredAt       time.Time `db:"expiredat"`
 }
 
-func (rpsql *ResetPasswordRequestSQL) SetAccountUUID(account *AccountSQL) {
+func (rpsql *ResetPasswordRequestSQL) SetAccountUUID(account *Account) {
 	rpsql.AccountUUID = account.GetUUID()
 }
 

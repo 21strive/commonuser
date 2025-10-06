@@ -1,12 +1,12 @@
 package commonuser
 
-type NativeAuthRequestBody struct {
+type NativeAuthRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	DeviceInformation
 }
 
-type NativeRegistrationRequestBody struct {
+type NativeRegistrationRequest struct {
 	Email    string `json:"email"`
 	Username string `json:"username"`
 	Password string `json:"password"`

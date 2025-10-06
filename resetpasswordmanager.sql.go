@@ -8,12 +8,12 @@ import (
 )
 
 type ResetPasswordManagerSQL struct {
-	base       *redifu.Base[AccountSQL]
+	base       *redifu.Base[Account]
 	db         *sql.DB
 	entityName string
 }
 
-func (ar *ResetPasswordManagerSQL) Create(account *AccountSQL) (*ResetPasswordRequestSQL, error) {
+func (ar *ResetPasswordManagerSQL) Create(account *Account) (*ResetPasswordRequestSQL, error) {
 	requestResetPassword := NewResetPasswordSQL()
 	requestResetPassword.SetAccountUUID(account)
 	requestResetPassword.SetToken()
@@ -39,7 +39,7 @@ func (ar *ResetPasswordManagerSQL) Create(account *AccountSQL) (*ResetPasswordRe
 	return &requestResetPassword, nil
 }
 
-func (ar *ResetPasswordManagerSQL) Find(account *AccountSQL) (*ResetPasswordRequestSQL, error) {
+func (ar *ResetPasswordManagerSQL) Find(account *Account) (*ResetPasswordRequestSQL, error) {
 	tableName := ar.entityName + "_reset_password"
 	query := "SELECT * FROM " + tableName + " WHERE accountuuid = $1"
 	row := ar.db.QueryRow(query, account.Email)
@@ -85,7 +85,7 @@ func (ar *ResetPasswordManagerSQL) Delete(requestSQL *ResetPasswordRequestSQL) e
 }
 
 func NewResetPasswordManagerSQL(db *sql.DB, redis redis.UniversalClient, entityName string) *ResetPasswordManagerSQL {
-	base := redifu.NewBase[AccountSQL](redis, entityName+":%s", BaseTTL)
+	base := redifu.NewBase[Account](redis, entityName+":%s", BaseTTL)
 	return &ResetPasswordManagerSQL{
 		base: base,
 		db:   db,

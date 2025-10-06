@@ -111,15 +111,16 @@ func (b *Base) IsPasswordExist() bool {
 }
 
 type Session struct {
-	LastActiveAt  time.Time `json:"lastloginat"`
-	AccountUUID   string    `json:"accountuuid"`
-	DeviceId      string    `json:"deviceid"`
-	DeviceInfo    string    `json:"deviceinfo"`
-	UserAgent     string    `json:"useragent"`
-	RefreshToken  string    `json:"refreshToken"`
-	ExpiresAt     time.Time `json:"expiresAt"`
-	IsActive      bool      `json:"revoked"`
-	DeactivatedAt time.Time `json:"deactivatedAt"`
+	*redifu.SQLItem `bson:",inline" json:",inline"`
+	LastActiveAt    time.Time `json:"lastloginat"`
+	AccountUUID     string    `json:"accountuuid"`
+	DeviceId        string    `json:"deviceid"`
+	DeviceInfo      string    `json:"deviceinfo"`
+	UserAgent       string    `json:"useragent"`
+	RefreshToken    string    `json:"refreshToken"`
+	ExpiresAt       time.Time `json:"expiresAt"`
+	IsActive        bool      `json:"revoked"`
+	DeactivatedAt   time.Time `json:"deactivatedAt"`
 }
 
 func (s *Session) SetLastActiveAt(lastActiveAt time.Time) {
@@ -180,12 +181,12 @@ func (s *Session) IsValid() bool {
 	return true
 }
 
-type AccountSQL struct {
+type Account struct {
 	*redifu.SQLItem
 	Base
 }
 
-func (asql *AccountSQL) GenerateAccessToken(jwtSecret string, jwtTokenIssuer string, jwtTokenLifeSpan time.Duration, sessionID string) (string, error) {
+func (asql *Account) GenerateAccessToken(jwtSecret string, jwtTokenIssuer string, jwtTokenLifeSpan time.Duration, sessionID string) (string, error) {
 	timeNow := time.Now().UTC()
 	expirestAt := timeNow.Add(jwtTokenLifeSpan)
 
@@ -217,21 +218,16 @@ func (asql *AccountSQL) GenerateAccessToken(jwtSecret string, jwtTokenIssuer str
 	return tokenString, nil
 }
 
-func NewAccountSQL() *AccountSQL {
-	account := &AccountSQL{
+func NewAccount() *Account {
+	account := &Account{
 		Base: Base{},
 	}
 	redifu.InitSQLItem(account)
 	return account
 }
 
-type SessionSQL struct {
-	*redifu.SQLItem `bson:",inline" json:",inline"`
-	Session
-}
-
-func NewSessionSQL() *SessionSQL {
-	session := &SessionSQL{}
+func NewSession() *Session {
+	session := &Session{}
 	redifu.InitSQLItem(session)
 	session.IsActive = true // active by default
 	return session
@@ -240,4 +236,19 @@ func NewSessionSQL() *SessionSQL {
 type AccountMongo struct {
 	*redifu.MongoItem `bson:",inline" json:",inline"`
 	Base              `bson:",inline" json:",inline"`
+}
+
+type AccountReference struct {
+	*redifu.SQLItem
+	AccountRandId string `json:"accountRandId"`
+}
+
+func (ar *AccountReference) SetAccountRandId(accountRandId string) {
+	ar.AccountRandId = accountRandId
+}
+
+func NewAccountReference() *AccountReference {
+	accountReference := &AccountReference{}
+	redifu.InitSQLItem(accountReference)
+	return accountReference
 }

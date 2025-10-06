@@ -10,7 +10,7 @@ type UpdateEmailManagerSQL struct {
 	entityName string
 }
 
-func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddress string) (*UpdateEmailRequestSQL, error) {
+func (em *UpdateEmailManagerSQL) CreateRequest(account Account, newEmailAddress string) (*UpdateEmailRequestSQL, error) {
 	updateEmailRequest := NewUpdateEmailRequestSQL()
 	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
 	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
@@ -38,7 +38,7 @@ func (em *UpdateEmailManagerSQL) CreateRequest(account AccountSQL, newEmailAddre
 	return &updateEmailRequest, nil
 }
 
-func (em *UpdateEmailManagerSQL) FindRequest(account AccountSQL) (*UpdateEmailRequestSQL, error) {
+func (em *UpdateEmailManagerSQL) FindRequest(account Account) (*UpdateEmailRequestSQL, error) {
 	tableName := em.entityName + "_update_email"
 	query := `SELECT * FROM ` + tableName + ` WHERE account_uuid = $1`
 	row := em.db.QueryRow(query, account.GetUUID())
@@ -83,7 +83,7 @@ func (em *UpdateEmailManagerSQL) DeleteRequest(request *UpdateEmailRequestSQL) e
 	return nil
 }
 
-func (em *UpdateEmailManagerSQL) ValidateRequest(account AccountSQL, updateToken string) error {
+func (em *UpdateEmailManagerSQL) ValidateRequest(account Account, updateToken string) error {
 	request, errFind := em.FindRequest(account)
 	if errFind != nil {
 		return errFind
