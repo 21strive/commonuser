@@ -322,6 +322,10 @@ type AccountFetchers struct {
 	entityName    string
 }
 
+func (af *AccountFetchers) Base() *redifu.Base[Account] {
+	return af.base
+}
+
 func (af *AccountFetchers) FetchByUsername(username string) (*Account, error) {
 	accountRef, errGetRef := af.baseReference.Get(username)
 	if errGetRef != nil {
