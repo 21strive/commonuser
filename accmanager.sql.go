@@ -106,7 +106,7 @@ func (asql *AccountManagerSQL) SeedAllAccount() error {
 	}
 	defer rows.Close()
 
-	return asql.sortedAccountSeeder.SeedAll(query, accountRowsScanner, nil, nil)
+	return asql.sortedAccountSeeder.Seed(query, accountRowsScanner, nil, nil)
 }
 
 func accountRowsScanner(rows *sql.Rows) (AccountSQL, error) {
