@@ -6,6 +6,12 @@ type NativeAuthRequest struct {
 	DeviceInformation
 }
 
+type NativeAuthByEmailRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	DeviceInformation
+}
+
 type NativeRegistrationRequest struct {
 	Email    string `json:"email"`
 	Username string `json:"username"`

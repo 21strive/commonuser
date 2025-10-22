@@ -39,7 +39,7 @@ func (aw *Command) SessionBase() *redifu.Base[Session] {
 	return aw.sessionRepository.Base()
 }
 
-func (aw *Command) Authenticate(req *NativeAuthRequest) (*string, *string, *WorkflowError) {
+func (aw *Command) AuthenticateByUsername(req *NativeAuthRequest) (*string, *string, *WorkflowError) {
 	accountFromDB, errFindUser := aw.accountRepository.FindByUsername(req.Username)
 	if errFindUser != nil {
 		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
@@ -48,7 +48,26 @@ func (aw *Command) Authenticate(req *NativeAuthRequest) (*string, *string, *Work
 		return nil, nil, &WorkflowError{Error: AccountNotFound, Source: "AccountNotFound"}
 	}
 
-	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(req.Password)
+	return aw.Authenticate(accountFromDB, req.Password, req.DeviceId, req.DeviceInfo, req.UserAgent)
+}
+
+func (aw *Command) AuthenticateByEmail(req *NativeAuthByEmailRequest) (*string, *string, *WorkflowError) {
+	accountFromDB, errFindUser := aw.accountRepository.FindByEmail(req.Email)
+	if errFindUser != nil {
+		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
+	}
+	if accountFromDB == nil {
+		return nil, nil, &WorkflowError{Error: AccountNotFound, Source: "AccountNotFound"}
+	}
+
+	return aw.Authenticate(accountFromDB, req.Password, req.DeviceId, req.DeviceInfo, req.UserAgent)
+}
+
+func (aw *Command) Authenticate(
+	accountFromDB *Account, password string, deviceId string,
+	deviceInfo string, userAgent string) (*string, *string, *WorkflowError) {
+
+	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(password)
 	if errVerifyPassword != nil {
 		return nil, nil, &WorkflowError{Error: errVerifyPassword, Source: "VerifyPassword"}
 	}
@@ -58,9 +77,9 @@ func (aw *Command) Authenticate(req *NativeAuthRequest) (*string, *string, *Work
 
 	session := NewSession()
 
-	session.SetDeviceId(req.DeviceId)
-	session.SetDeviceInfo(req.DeviceInfo)
-	session.SetUserAgent(req.UserAgent)
+	session.SetDeviceId(deviceId)
+	session.SetDeviceInfo(deviceInfo)
+	session.SetUserAgent(userAgent)
 	session.SetAccountUUID(accountFromDB.GetUUID())
 	session.SetLastActiveAt(time.Now().UTC())
 	session.SetLifeSpan(aw.config.TokenLifespan)
