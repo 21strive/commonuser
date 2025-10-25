@@ -7,7 +7,6 @@ import (
 	"github.com/21strive/commonuser/session"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
-	"time"
 )
 
 type WorkflowError struct {
@@ -135,7 +134,14 @@ func (aw *Command) Register(reqBody *NativeRegistrationRequest) (*account.Accoun
 	newAccount.SetEmail(reqBody.Email)
 	newAccount.SetPassword(reqBody.Password)
 	newAccount.SetName(reqBody.Name)
-	newAccount.SetUsername(reqBody.Username)
+
+	if reqBody.Username != "" {
+		newAccount.SetUsername(reqBody.Username)
+	} else {
+		randUsername := item.RandId()
+		newAccount.SetUsername(randUsername)
+	}
+
 	newAccount.SetAvatar(reqBody.Avatar)
 
 	errCreateAcc := aw.accountRepository.Create(newAccount)
