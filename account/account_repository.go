@@ -17,16 +17,20 @@ type AccountRepository struct {
 	baseReference       *redifu.Base[AccountReference]
 	sortedAccount       *redifu.Sorted[Account]
 	sortedAccountSeeder *redifu.SortedSQLSeeder[Account]
+	findByUsernameStmt  *sql.Stmt
+	findByRandIdStmt    *sql.Stmt
+	findByEmailStmt     *sql.Stmt
+	findByUUIDStmt      *sql.Stmt
 	entityName          string
 }
 
-func (asql *AccountRepository) Base() *redifu.Base[Account] {
+func (asql *AccountRepository) GetBase() *redifu.Base[Account] {
 	return asql.base
 }
 
-func (asql *AccountRepository) Create(account *Account) error {
+func (asql *AccountRepository) Create(tx *sql.Tx, account *Account) error {
 	query := "INSERT INTO " + asql.entityName + " (uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
-	_, errInsert := asql.db.Exec(query, account.GetUUID(), account.GetRandId(), account.GetCreatedAt(), account.GetUpdatedAt(), account.Name, account.Username, account.Password, account.Email, account.Avatar, account.Suspended)
+	_, errInsert := tx.Exec(query, account.GetUUID(), account.GetRandId(), account.GetCreatedAt(), account.GetUpdatedAt(), account.Name, account.Username, account.Password, account.Email, account.Avatar, account.Suspended)
 	if errInsert != nil {
 		return errInsert
 	}
@@ -49,9 +53,9 @@ func (asql *AccountRepository) Create(account *Account) error {
 	return nil
 }
 
-func (asql *AccountRepository) Update(account *Account) error {
+func (asql *AccountRepository) Update(tx *sql.Tx, account *Account) error {
 	query := "UPDATE " + asql.entityName + " SET updated_at = $1, name = $2, username = $3, avatar = $4 WHERE uuid = $5"
-	_, errUpdate := asql.db.Exec(query, account.GetUpdatedAt(), account.Name, account.Username, account.Avatar, account.GetUUID())
+	_, errUpdate := tx.Exec(query, account.GetUpdatedAt(), account.Name, account.Username, account.Avatar, account.GetUUID())
 	if errUpdate != nil {
 		return errUpdate
 	}
@@ -85,9 +89,9 @@ func (asql *AccountRepository) UpdateReference(account *Account, oldUsername str
 	return nil
 }
 
-func (asql *AccountRepository) Delete(account *Account) error {
+func (asql *AccountRepository) Delete(tx *sql.Tx, account *Account) error {
 	query := "DELETE FROM " + asql.entityName + " WHERE uuid = $1"
-	_, errDelete := asql.db.Exec(query, account.GetUUID())
+	_, errDelete := tx.Exec(query, account.GetUUID())
 	if errDelete != nil {
 		return errDelete
 	}
@@ -146,8 +150,7 @@ func accountRowsScanner(rows *sql.Rows) (Account, error) {
 }
 
 func (asql *AccountRepository) FindByUsername(username string) (*Account, error) {
-	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE username = $1"
-	return asql.findOneAccount(query, username)
+	return AccountRowScanner(asql.findByUsernameStmt.QueryRow(username))
 }
 
 func (asql *AccountRepository) SeedByUsername(username string) error {
@@ -183,8 +186,7 @@ func (asql *AccountRepository) SeedByUsername(username string) error {
 }
 
 func (asql *AccountRepository) FindByRandId(randId string) (*Account, error) {
-	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE randId = $1"
-	return asql.findOneAccount(query, randId)
+	return AccountRowScanner(asql.findByRandIdStmt.QueryRow(randId))
 }
 
 func (asql *AccountRepository) SeedByRandId(randId string) error {
@@ -217,7 +219,7 @@ func (asql *AccountRepository) SeedByRandId(randId string) error {
 
 func (asql *AccountRepository) FindByEmail(email string) (*Account, error) {
 	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE email = $1"
-	return asql.findOneAccount(query, email)
+	return asql.AccountRowScanner(query, email)
 }
 
 func (asql *AccountRepository) SeedByEmail(email string) error {
@@ -246,7 +248,7 @@ func (asql *AccountRepository) SeedByEmail(email string) error {
 
 func (asql *AccountRepository) FindByUUID(uuid string) (*Account, error) {
 	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE uuid = $1"
-	return asql.findOneAccount(query, uuid)
+	return asql.AccountRowScanner(query, uuid)
 }
 
 func (asql *AccountRepository) SeedByUUID(uuid string) error {
@@ -273,8 +275,7 @@ func (asql *AccountRepository) SeedByUUID(uuid string) error {
 	return nil
 }
 
-func (asql *AccountRepository) findOneAccount(query string, param string) (*Account, error) {
-	row := asql.db.QueryRow(query, param)
+func AccountRowScanner(row *sql.Row) (*Account, error) {
 	account := NewAccount()
 	err := row.Scan(
 		&account.SQLItem.UUID,
@@ -299,19 +300,31 @@ func (asql *AccountRepository) findOneAccount(query string, param string) (*Acco
 	return account, nil
 }
 
-func NewAccountRepository(db *sql.DB, redis redis.UniversalClient, entityName string) *AccountRepository {
+func NewAccountRepository(writeDB *sql.DB, readDB *sql.DB, redis redis.UniversalClient, entityName string) *AccountRepository {
 	base := redifu.NewBase[Account](redis, entityName+":%s", shared.BaseTTL)
 	baseReference := redifu.NewBase[AccountReference](redis, entityName+":username:%s", shared.BaseTTL)
 	sortedAccount := redifu.NewSorted[Account](redis, base, "account", shared.SortedSetTTL)
-	sortedAccountSeeder := redifu.NewSortedSQLSeeder[Account](db, base, sortedAccount)
+	sortedAccountSeeder := redifu.NewSortedSQLSeeder[Account](readDB, base, sortedAccount)
+
+	var errPrepare error
+	findByUsernameStmt, errPrepare := readDB.Prepare("SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + entityName + " WHERE username = $1")
+	if errPrepare != nil {
+		panic(errPrepare)
+	}
+	findByRandId, errPrepare := readDB.Prepare("SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + entityName + " WHERE randId = $1")
+	if errPrepare != nil {
+		panic(errPrepare)
+	}
+
 	return &AccountRepository{
-		db:                  db,
 		base:                base,
 		baseReference:       baseReference,
 		entityName:          entityName,
 		sortedAccount:       sortedAccount,
 		sortedAccountSeeder: sortedAccountSeeder,
 		redis:               redis,
+		findByUsernameStmt:  findByUsernameStmt,
+		findByRandIdStmt:    findByRandId,
 	}
 }
 

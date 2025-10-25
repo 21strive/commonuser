@@ -36,7 +36,7 @@ type Command struct {
 }
 
 func (aw *Command) AccountBase() *redifu.Base[account.Account] {
-	return aw.accountRepository.Base()
+	return aw.accountRepository.GetBase()
 }
 
 func (aw *Command) SessionBase() *redifu.Base[session.Session] {
@@ -201,39 +201,23 @@ type AccountFinder struct {
 }
 
 func (af *AccountFinder) ByUsername(username string) (*account.Account, error) {
-	return af.aw.findByUsername(username)
+	return af.aw.accountRepository.FindByUsername(username)
 }
 
 func (af *AccountFinder) ByRandId(randId string) (*account.Account, error) {
-	return af.aw.findByRandId(randId)
+	return af.aw.accountRepository.FindByRandId(randId)
 }
 
 func (af *AccountFinder) ByUUID(uuid string) (*account.Account, error) {
-	return af.aw.findByUUID(uuid)
+	return af.aw.accountRepository.FindByUUID(uuid)
 }
 
 func (af *AccountFinder) ByEmail(email string) (*account.Account, error) {
-	return af.aw.findByEmail(email)
+	return af.aw.accountRepository.FindByEmail(email)
 }
 
 func (aw *Command) Find() *AccountFinder {
 	return &AccountFinder{aw: aw}
-}
-
-func (aw *Command) findByUsername(username string) (*account.Account, error) {
-	return aw.accountRepository.FindByUsername(username)
-}
-
-func (aw *Command) findByRandId(randId string) (*account.Account, error) {
-	return aw.accountRepository.FindByRandId(randId)
-}
-
-func (aw *Command) findByUUID(uuid string) (*account.Account, error) {
-	return aw.accountRepository.FindByUUID(uuid)
-}
-
-func (aw *Command) findByEmail(email string) (*account.Account, error) {
-	return aw.accountRepository.FindByEmail(email)
 }
 
 func New(db *sql.DB, redisClient redis.UniversalClient, entityName string, accountConfig *Config) *Command {
