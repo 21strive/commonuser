@@ -1,7 +1,8 @@
-package commonuser
+package session
 
 import (
 	"database/sql"
+	"github.com/21strive/commonuser/shared"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 	"time"
@@ -153,7 +154,7 @@ func (sm *SessionRepository) FindByAccountUUID(accountUUID string) ([]Session, e
 }
 
 func NewSessionRepository(db *sql.DB, redis redis.UniversalClient, entityName string) *SessionRepository {
-	base := redifu.NewBase[Session](redis, entityName+":session:%s", BaseTTL)
+	base := redifu.NewBase[Session](redis, entityName+":session:%s", shared.BaseTTL)
 	return &SessionRepository{
 		base:       base,
 		db:         db,
@@ -174,7 +175,7 @@ func (sf *SessionFetcher) FetchByRandId(randId string) (*Session, error) {
 }
 
 func NewSessionFetcher(client redis.UniversalClient, entityName string) *SessionFetcher {
-	base := redifu.NewBase[Session](client, entityName+":session:%s", BaseTTL)
+	base := redifu.NewBase[Session](client, entityName+":session:%s", shared.BaseTTL)
 	return &SessionFetcher{
 		base: base,
 	}

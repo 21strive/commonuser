@@ -1,7 +1,9 @@
-package commonuser
+package update_email
 
 import (
 	"database/sql"
+	"github.com/21strive/commonuser/account"
+	"github.com/21strive/commonuser/shared"
 	"time"
 )
 
@@ -10,7 +12,7 @@ type UpdateEmailManagerSQL struct {
 	entityName string
 }
 
-func (em *UpdateEmailManagerSQL) CreateRequest(account Account, newEmailAddress string) (*UpdateEmailRequestSQL, error) {
+func (em *UpdateEmailManagerSQL) CreateRequest(account account.Account, newEmailAddress string) (*UpdateEmail, error) {
 	updateEmailRequest := NewUpdateEmailRequestSQL()
 	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
 	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
@@ -38,7 +40,7 @@ func (em *UpdateEmailManagerSQL) CreateRequest(account Account, newEmailAddress 
 	return &updateEmailRequest, nil
 }
 
-func (em *UpdateEmailManagerSQL) FindRequest(account Account) (*UpdateEmailRequestSQL, error) {
+func (em *UpdateEmailManagerSQL) FindRequest(account account.Account) (*UpdateEmail, error) {
 	tableName := em.entityName + "_update_email"
 	query := `SELECT * FROM ` + tableName + ` WHERE account_uuid = $1`
 	row := em.db.QueryRow(query, account.GetUUID())
@@ -67,13 +69,12 @@ func (em *UpdateEmailManagerSQL) FindRequest(account Account) (*UpdateEmailReque
 			return nil, err
 		}
 		return newUpdateEmailRequest, nil
-	} else {
-		return nil, RequestExist
 	}
+
 	return &updateEmailRequest, nil
 }
 
-func (em *UpdateEmailManagerSQL) DeleteRequest(request *UpdateEmailRequestSQL) error {
+func (em *UpdateEmailManagerSQL) DeleteRequest(request *UpdateEmail) error {
 	tableName := em.entityName + "_update_email"
 	query := `DELETE FROM ` + tableName + ` WHERE uuid = $1`
 	_, errDelete := em.db.Exec(query, request.GetUUID())
@@ -83,19 +84,19 @@ func (em *UpdateEmailManagerSQL) DeleteRequest(request *UpdateEmailRequestSQL) e
 	return nil
 }
 
-func (em *UpdateEmailManagerSQL) ValidateRequest(account Account, updateToken string) error {
+func (em *UpdateEmailManagerSQL) ValidateRequest(account account.Account, updateToken string) error {
 	request, errFind := em.FindRequest(account)
 	if errFind != nil {
 		return errFind
 	}
 	if request == nil {
-		return RequestNotFound
+		return shared.RequestNotFound
 	}
 	errValidate := request.Validate(updateToken)
 	if errValidate != nil {
-		if errValidate == RequestExpired {
+		if errValidate == shared.RequestExpired {
 			em.DeleteRequest(request)
-			return RequestExpired
+			return shared.RequestExpired
 		}
 		return errValidate
 	}
