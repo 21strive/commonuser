@@ -3,6 +3,8 @@ package commonuser
 import (
 	"database/sql"
 	"errors"
+	"github.com/21strive/commonuser/account"
+	"github.com/21strive/commonuser/session"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 	"time"
@@ -13,7 +15,6 @@ type WorkflowError struct {
 	Source string
 }
 
-var AccountNotFound = errors.New("account not found!")
 var SessionNotFound = errors.New("session not found!")
 var InvalidSession = errors.New("invalid session!")
 
@@ -26,16 +27,16 @@ type Config struct {
 }
 
 type Command struct {
-	accountRepository *AccountRepository
-	sessionRepository *SessionRepository
+	accountRepository *account.AccountRepository
+	sessionRepository *session.SessionRepository
 	config            *Config
 }
 
-func (aw *Command) AccountBase() *redifu.Base[Account] {
+func (aw *Command) AccountBase() *redifu.Base[account.Account] {
 	return aw.accountRepository.Base()
 }
 
-func (aw *Command) SessionBase() *redifu.Base[Session] {
+func (aw *Command) SessionBase() *redifu.Base[session.Session] {
 	return aw.sessionRepository.Base()
 }
 
@@ -64,7 +65,7 @@ func (aw *Command) AuthenticateByEmail(req *NativeAuthByEmailRequest) (*string, 
 }
 
 func (aw *Command) Authenticate(
-	accountFromDB *Account, password string, deviceId string,
+	accountFromDB *account.Account, password string, deviceId string,
 	deviceInfo string, userAgent string) (*string, *string, *WorkflowError) {
 
 	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(password)
@@ -72,10 +73,10 @@ func (aw *Command) Authenticate(
 		return nil, nil, &WorkflowError{Error: errVerifyPassword, Source: "VerifyPassword"}
 	}
 	if !isAuthenticated {
-		return nil, nil, &WorkflowError{Error: Unauthorized, Source: "WrongPassword"}
+		return nil, nil, &WorkflowError{Error: account.Unauthorized, Source: "WrongPassword"}
 	}
 
-	session := NewSession()
+	session := account.NewSession()
 
 	session.SetDeviceId(deviceId)
 	session.SetDeviceInfo(deviceInfo)
@@ -98,7 +99,7 @@ func (aw *Command) Authenticate(
 	return &accessToken, &session.RefreshToken, nil
 }
 
-func (aw *Command) RefreshToken(account *Account, refreshToken string) (*string, *string, *WorkflowError) {
+func (aw *Command) RefreshToken(account *account.Account, refreshToken string) (*string, *string, *WorkflowError) {
 
 	session, errFind := aw.sessionRepository.FindByHash(refreshToken)
 	if errFind != nil {
@@ -129,8 +130,8 @@ func (aw *Command) RefreshToken(account *Account, refreshToken string) (*string,
 	return &newAccessToken, &session.RefreshToken, nil
 }
 
-func (aw *Command) Register(reqBody *NativeRegistrationRequest) (*Account, *WorkflowError) {
-	newAccount := NewAccount()
+func (aw *Command) Register(reqBody *NativeRegistrationRequest) (*account.Account, *WorkflowError) {
+	newAccount := account.NewAccount()
 	newAccount.SetEmail(reqBody.Email)
 	newAccount.SetPassword(reqBody.Password)
 	newAccount.SetName(reqBody.Name)
@@ -145,7 +146,7 @@ func (aw *Command) Register(reqBody *NativeRegistrationRequest) (*Account, *Work
 	return newAccount, nil
 }
 
-func (aw *Command) Delete(account *Account) *WorkflowError {
+func (aw *Command) Delete(account *account.Account) *WorkflowError {
 	errDel := aw.accountRepository.Delete(account)
 	if errDel != nil {
 		return &WorkflowError{Error: errDel, Source: "Delete"}
@@ -189,19 +190,19 @@ type AccountFinder struct {
 	aw *Command
 }
 
-func (af *AccountFinder) ByUsername(username string) (*Account, error) {
+func (af *AccountFinder) ByUsername(username string) (*account.Account, error) {
 	return af.aw.findByUsername(username)
 }
 
-func (af *AccountFinder) ByRandId(randId string) (*Account, error) {
+func (af *AccountFinder) ByRandId(randId string) (*account.Account, error) {
 	return af.aw.findByRandId(randId)
 }
 
-func (af *AccountFinder) ByUUID(uuid string) (*Account, error) {
+func (af *AccountFinder) ByUUID(uuid string) (*account.Account, error) {
 	return af.aw.findByUUID(uuid)
 }
 
-func (af *AccountFinder) ByEmail(email string) (*Account, error) {
+func (af *AccountFinder) ByEmail(email string) (*account.Account, error) {
 	return af.aw.findByEmail(email)
 }
 
@@ -209,25 +210,25 @@ func (aw *Command) Find() *AccountFinder {
 	return &AccountFinder{aw: aw}
 }
 
-func (aw *Command) findByUsername(username string) (*Account, error) {
+func (aw *Command) findByUsername(username string) (*account.Account, error) {
 	return aw.accountRepository.FindByUsername(username)
 }
 
-func (aw *Command) findByRandId(randId string) (*Account, error) {
+func (aw *Command) findByRandId(randId string) (*account.Account, error) {
 	return aw.accountRepository.FindByRandId(randId)
 }
 
-func (aw *Command) findByUUID(uuid string) (*Account, error) {
+func (aw *Command) findByUUID(uuid string) (*account.Account, error) {
 	return aw.accountRepository.FindByUUID(uuid)
 }
 
-func (aw *Command) findByEmail(email string) (*Account, error) {
+func (aw *Command) findByEmail(email string) (*account.Account, error) {
 	return aw.accountRepository.FindByEmail(email)
 }
 
 func New(db *sql.DB, redisClient redis.UniversalClient, entityName string, accountConfig *Config) *Command {
-	accountManager := NewAccountRepository(db, redisClient, entityName)
-	sessionManager := NewSessionRepository(db, redisClient, entityName)
+	accountManager := account.NewAccountRepository(db, redisClient, entityName)
+	sessionManager := session.NewSessionRepository(db, redisClient, entityName)
 
 	return &Command{
 		accountRepository: accountManager,
@@ -237,11 +238,11 @@ func New(db *sql.DB, redisClient redis.UniversalClient, entityName string, accou
 }
 
 type Fetchers struct {
-	AccountFetcher *AccountFetchers
-	sessionFetcher *SessionFetcher
+	AccountFetcher *account.AccountFetchers
+	sessionFetcher *session.SessionFetcher
 }
 
-func (af *Fetchers) FetchByUsername(username string) (*Account, bool, *WorkflowError) {
+func (af *Fetchers) FetchByUsername(username string) (*account.Account, bool, *WorkflowError) {
 	account, err := af.AccountFetcher.FetchByUsername(username)
 	if err != nil {
 		return nil, false, &WorkflowError{Error: err, Source: "FetchByUsername"}
@@ -263,7 +264,7 @@ func (af *Fetchers) FetchByUsername(username string) (*Account, bool, *WorkflowE
 	return account, false, nil
 }
 
-func (af *Fetchers) FetchByRandId(randId string) (*Account, bool, *WorkflowError) {
+func (af *Fetchers) FetchByRandId(randId string) (*account.Account, bool, *WorkflowError) {
 	account, err := af.AccountFetcher.FetchByRandId(randId)
 	if err != nil {
 		return nil, false, &WorkflowError{Error: err, Source: "FetchByRandId"}
@@ -285,7 +286,7 @@ func (af *Fetchers) FetchByRandId(randId string) (*Account, bool, *WorkflowError
 	return account, false, nil
 }
 
-func (af *Fetchers) FetchAll(sortDir string) ([]Account, bool, *WorkflowError) {
+func (af *Fetchers) FetchAll(sortDir string) ([]account.Account, bool, *WorkflowError) {
 	accounts, err := af.AccountFetcher.FetchAll(sortDir)
 	if err != nil {
 		return nil, false, &WorkflowError{Error: err, Source: "FetchAll"}
@@ -305,8 +306,8 @@ func (af *Fetchers) FetchAll(sortDir string) ([]Account, bool, *WorkflowError) {
 }
 
 func NewFetchers(redisClient redis.UniversalClient, entityName string) *Fetchers {
-	accountFetcher := NewAccountFetchers(redisClient, entityName)
-	sessionFetcher := NewSessionFetcher(redisClient, entityName)
+	accountFetcher := account.NewAccountFetchers(redisClient, entityName)
+	sessionFetcher := session.NewSessionFetcher(redisClient, entityName)
 	return &Fetchers{
 		AccountFetcher: accountFetcher,
 		sessionFetcher: sessionFetcher,

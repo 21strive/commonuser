@@ -1,12 +1,14 @@
-package commonuser
+package update_email
 
 import (
+	"github.com/21strive/commonuser/account"
+	"github.com/21strive/commonuser/shared"
 	"github.com/21strive/item"
 	"github.com/21strive/redifu"
 	"time"
 )
 
-type UpdateEmailRequestSQL struct {
+type UpdateEmail struct {
 	*redifu.SQLItem      `bson:",inline" json:",inline"`
 	AccountUUID          string    `db:"account_uuid"`
 	PreviousEmailAddress string    `db:"previous_email_address"`
@@ -15,41 +17,41 @@ type UpdateEmailRequestSQL struct {
 	ExpiredAt            time.Time `db:"expired_at"`
 }
 
-func (ue *UpdateEmailRequestSQL) SetAccountUUID(account *Account) {
+func (ue *UpdateEmail) SetAccountUUID(account *account.Account) {
 	ue.AccountUUID = account.UUID
 }
 
-func (ue *UpdateEmailRequestSQL) SetPreviousEmailAddress(email string) {
+func (ue *UpdateEmail) SetPreviousEmailAddress(email string) {
 	ue.PreviousEmailAddress = email
 }
 
-func (ue *UpdateEmailRequestSQL) SetNewEmailAddress(email string) {
+func (ue *UpdateEmail) SetNewEmailAddress(email string) {
 	ue.NewEmailAddress = email
 }
 
-func (ue *UpdateEmailRequestSQL) SetResetToken() {
+func (ue *UpdateEmail) SetResetToken() {
 	token := item.RandId()
 	ue.UpdateToken = token
 }
 
-func (ue *UpdateEmailRequestSQL) SetExpiration() {
+func (ue *UpdateEmail) SetExpiration() {
 	ue.ExpiredAt = time.Now().Add(time.Hour * 48)
 }
 
-func (ue *UpdateEmailRequestSQL) Validate(updateToken string) error {
+func (ue *UpdateEmail) Validate(updateToken string) error {
 	time := time.Now().UTC()
 	if time.After(ue.ExpiredAt) {
-		return RequestExpired
+		return shared.RequestExpired
 	}
 
 	if ue.UpdateToken != updateToken {
-		return InvalidToken
+		return shared.InvalidToken
 	}
 	return nil
 }
 
-func NewUpdateEmailRequestSQL() UpdateEmailRequestSQL {
-	ue := UpdateEmailRequestSQL{}
+func NewUpdateEmailRequestSQL() UpdateEmail {
+	ue := UpdateEmail{}
 	redifu.InitSQLItem(&ue)
 	return ue
 }

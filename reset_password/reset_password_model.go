@@ -1,43 +1,45 @@
-package commonuser
+package reset_password
 
 import (
+	"github.com/21strive/commonuser/account"
+	"github.com/21strive/commonuser/shared"
 	"github.com/21strive/item"
 	"github.com/21strive/redifu"
 	"time"
 )
 
-type ResetPasswordRequestSQL struct {
+type ResetPassword struct {
 	*redifu.SQLItem `bson:",inline" json:",inline"`
 	AccountUUID     string    `db:"accountuuid"`
 	Token           string    `db:"token"`
 	ExpiredAt       time.Time `db:"expiredat"`
 }
 
-func (rpsql *ResetPasswordRequestSQL) SetAccountUUID(account *Account) {
+func (rpsql *ResetPassword) SetAccountUUID(account *account.Account) {
 	rpsql.AccountUUID = account.GetUUID()
 }
 
-func (rpsql *ResetPasswordRequestSQL) SetToken() {
+func (rpsql *ResetPassword) SetToken() {
 	rpsql.Token = item.RandId()
 }
 
-func (rpsql *ResetPasswordRequestSQL) SetExpiredAt() {
+func (rpsql *ResetPassword) SetExpiredAt() {
 	rpsql.ExpiredAt = time.Now().Add(time.Hour * 48)
 }
 
-func (rpsql *ResetPasswordRequestSQL) Validate(token string) error {
+func (rpsql *ResetPassword) Validate(token string) error {
 	time := time.Now().UTC()
 	if time.After(rpsql.ExpiredAt) {
-		return RequestExpired
+		return shared.RequestExpired
 	}
 	if rpsql.Token != token {
-		return InvalidToken
+		return shared.InvalidToken
 	}
 	return nil
 }
 
-func NewResetPasswordSQL() ResetPasswordRequestSQL {
-	request := ResetPasswordRequestSQL{}
+func NewResetPasswordSQL() ResetPassword {
+	request := ResetPassword{}
 	redifu.InitSQLItem(&request)
 	return request
 }

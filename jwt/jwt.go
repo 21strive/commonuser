@@ -1,7 +1,9 @@
-package commonuser
+package jwt
 
 import (
 	"fmt"
+	"github.com/21strive/commonuser/account"
+	"github.com/21strive/commonuser/shared"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -26,17 +28,17 @@ func (jh *JWTHandler) ParseJWT(jwtToken string, expectedStruct interface{ jwt.Cl
 	if claims, ok := claimedToken.Claims.(interface{ jwt.Claims }); ok && claimedToken.Valid {
 		return claims, nil
 	} else {
-		return nil, Unauthorized
+		return nil, shared.Unauthorized
 	}
 }
 
-func (jh *JWTHandler) ParseAccessToken(jwtToken string) (*UserClaims, error) {
-	userClaims, err := jh.ParseJWT(jwtToken, &UserClaims{})
+func (jh *JWTHandler) ParseAccessToken(jwtToken string) (*account.UserClaims, error) {
+	userClaims, err := jh.ParseJWT(jwtToken, &account.UserClaims{})
 	if err != nil {
 		return nil, err
 	}
 
-	return userClaims.(*UserClaims), nil
+	return userClaims.(*account.UserClaims), nil
 }
 
 func NewJWTHandler(jwtSecret string, jwtTokenIssuer string, jwtTokenLifeSpan int) *JWTHandler {

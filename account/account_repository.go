@@ -1,8 +1,9 @@
-package commonuser
+package account
 
 import (
 	"database/sql"
 	"errors"
+	"github.com/21strive/commonuser/shared"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 )
@@ -299,9 +300,9 @@ func (asql *AccountRepository) findOneAccount(query string, param string) (*Acco
 }
 
 func NewAccountRepository(db *sql.DB, redis redis.UniversalClient, entityName string) *AccountRepository {
-	base := redifu.NewBase[Account](redis, entityName+":%s", BaseTTL)
-	baseReference := redifu.NewBase[AccountReference](redis, entityName+":username:%s", BaseTTL)
-	sortedAccount := redifu.NewSorted[Account](redis, base, "account", SortedSetTTL)
+	base := redifu.NewBase[Account](redis, entityName+":%s", shared.BaseTTL)
+	baseReference := redifu.NewBase[AccountReference](redis, entityName+":username:%s", shared.BaseTTL)
+	sortedAccount := redifu.NewSorted[Account](redis, base, "account", shared.SortedSetTTL)
 	sortedAccountSeeder := redifu.NewSortedSQLSeeder[Account](db, base, sortedAccount)
 	return &AccountRepository{
 		db:                  db,
@@ -389,8 +390,8 @@ func (af *AccountFetchers) DelSortedBlank() error {
 }
 
 func NewAccountFetchers(redis redis.UniversalClient, entityName string) *AccountFetchers {
-	base := redifu.NewBase[Account](redis, entityName+":%s", BaseTTL)
-	sortedAccount := redifu.NewSorted[Account](redis, base, "account", SortedSetTTL)
+	base := redifu.NewBase[Account](redis, entityName+":%s", shared.BaseTTL)
+	sortedAccount := redifu.NewSorted[Account](redis, base, "account", shared.SortedSetTTL)
 	return &AccountFetchers{
 		redis:         redis,
 		base:          base,
