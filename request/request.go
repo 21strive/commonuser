@@ -1,4 +1,4 @@
-package commonuser
+package request
 
 type NativeAuthRequest struct {
 	Username string `json:"username"`

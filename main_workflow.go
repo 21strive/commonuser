@@ -4,9 +4,13 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/21strive/commonuser/account"
+	"github.com/21strive/commonuser/request"
 	"github.com/21strive/commonuser/session"
+	"github.com/21strive/commonuser/shared"
+	"github.com/21strive/item"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
+	"time"
 )
 
 type WorkflowError struct {
@@ -39,25 +43,25 @@ func (aw *Command) SessionBase() *redifu.Base[session.Session] {
 	return aw.sessionRepository.Base()
 }
 
-func (aw *Command) AuthenticateByUsername(req *NativeAuthRequest) (*string, *string, *WorkflowError) {
+func (aw *Command) AuthenticateByUsername(req *request.NativeAuthRequest) (*string, *string, *WorkflowError) {
 	accountFromDB, errFindUser := aw.accountRepository.FindByUsername(req.Username)
 	if errFindUser != nil {
 		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
 	}
 	if accountFromDB == nil {
-		return nil, nil, &WorkflowError{Error: AccountNotFound, Source: "AccountNotFound"}
+		return nil, nil, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
 	}
 
 	return aw.Authenticate(accountFromDB, req.Password, req.DeviceId, req.DeviceInfo, req.UserAgent)
 }
 
-func (aw *Command) AuthenticateByEmail(req *NativeAuthByEmailRequest) (*string, *string, *WorkflowError) {
+func (aw *Command) AuthenticateByEmail(req *request.NativeAuthByEmailRequest) (*string, *string, *WorkflowError) {
 	accountFromDB, errFindUser := aw.accountRepository.FindByEmail(req.Email)
 	if errFindUser != nil {
 		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
 	}
 	if accountFromDB == nil {
-		return nil, nil, &WorkflowError{Error: AccountNotFound, Source: "AccountNotFound"}
+		return nil, nil, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
 	}
 
 	return aw.Authenticate(accountFromDB, req.Password, req.DeviceId, req.DeviceInfo, req.UserAgent)
@@ -72,10 +76,10 @@ func (aw *Command) Authenticate(
 		return nil, nil, &WorkflowError{Error: errVerifyPassword, Source: "VerifyPassword"}
 	}
 	if !isAuthenticated {
-		return nil, nil, &WorkflowError{Error: account.Unauthorized, Source: "WrongPassword"}
+		return nil, nil, &WorkflowError{Error: shared.Unauthorized, Source: "WrongPassword"}
 	}
 
-	session := account.NewSession()
+	session := session.NewSession()
 
 	session.SetDeviceId(deviceId)
 	session.SetDeviceInfo(deviceInfo)
@@ -129,7 +133,7 @@ func (aw *Command) RefreshToken(account *account.Account, refreshToken string) (
 	return &newAccessToken, &session.RefreshToken, nil
 }
 
-func (aw *Command) Register(reqBody *NativeRegistrationRequest) (*account.Account, *WorkflowError) {
+func (aw *Command) Register(reqBody *request.NativeRegistrationRequest) (*account.Account, *WorkflowError) {
 	newAccount := account.NewAccount()
 	newAccount.SetEmail(reqBody.Email)
 	newAccount.SetPassword(reqBody.Password)
@@ -240,82 +244,5 @@ func New(db *sql.DB, redisClient redis.UniversalClient, entityName string, accou
 		accountRepository: accountManager,
 		sessionRepository: sessionManager,
 		config:            accountConfig,
-	}
-}
-
-type Fetchers struct {
-	AccountFetcher *account.AccountFetchers
-	sessionFetcher *session.SessionFetcher
-}
-
-func (af *Fetchers) FetchByUsername(username string) (*account.Account, bool, *WorkflowError) {
-	account, err := af.AccountFetcher.FetchByUsername(username)
-	if err != nil {
-		return nil, false, &WorkflowError{Error: err, Source: "FetchByUsername"}
-	}
-	if account == nil {
-		isBlank, errGet := af.AccountFetcher.IsReferenceBlank(username)
-		if errGet != nil {
-			return nil, false, &WorkflowError{Error: errGet, Source: "IsReferenceBlank"}
-		}
-		if isBlank {
-			return nil, false, &WorkflowError{Error: AccountNotFound, Source: "AccountNotFound"}
-		}
-		return nil, true, &WorkflowError{Error: AccountNotFound, Source: "AccountNotFound"}
-	}
-
-	af.AccountFetcher.DelBlankReference(username)
-	af.AccountFetcher.DelBlank(account.GetRandId())
-
-	return account, false, nil
-}
-
-func (af *Fetchers) FetchByRandId(randId string) (*account.Account, bool, *WorkflowError) {
-	account, err := af.AccountFetcher.FetchByRandId(randId)
-	if err != nil {
-		return nil, false, &WorkflowError{Error: err, Source: "FetchByRandId"}
-	}
-	if account == nil {
-		isBlank, errGet := af.AccountFetcher.IsBlank(randId)
-		if errGet != nil {
-			return nil, false, &WorkflowError{Error: errGet, Source: "IsBlank"}
-		}
-		if isBlank {
-			return nil, false, &WorkflowError{Error: AccountNotFound, Source: "AccountNotFound"}
-		}
-		return nil, true, &WorkflowError{Error: AccountNotFound, Source: "AccountNotFound"}
-	}
-
-	af.AccountFetcher.DelBlank(account.GetRandId())
-	af.AccountFetcher.DelBlankReference(account.Username)
-
-	return account, false, nil
-}
-
-func (af *Fetchers) FetchAll(sortDir string) ([]account.Account, bool, *WorkflowError) {
-	accounts, err := af.AccountFetcher.FetchAll(sortDir)
-	if err != nil {
-		return nil, false, &WorkflowError{Error: err, Source: "FetchAll"}
-	}
-	if len(accounts) == 0 {
-		isBlank, errCheck := af.AccountFetcher.IsSortedBlank()
-		if errCheck != nil {
-			return nil, false, &WorkflowError{Error: errCheck, Source: "IsBlankPage"}
-		}
-		if isBlank {
-			return nil, false, nil
-		}
-		return nil, true, nil
-	}
-
-	return accounts, false, nil
-}
-
-func NewFetchers(redisClient redis.UniversalClient, entityName string) *Fetchers {
-	accountFetcher := account.NewAccountFetchers(redisClient, entityName)
-	sessionFetcher := session.NewSessionFetcher(redisClient, entityName)
-	return &Fetchers{
-		AccountFetcher: accountFetcher,
-		sessionFetcher: sessionFetcher,
 	}
 }
