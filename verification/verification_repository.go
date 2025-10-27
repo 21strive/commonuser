@@ -2,6 +2,7 @@ package verification
 
 import (
 	"database/sql"
+	"github.com/21strive/commonuser/account"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/shared"
 )
@@ -59,8 +60,8 @@ func (r *Repository) Delete(db shared.SQLExecutor, verification *Verification) e
 	return nil
 }
 
-func (r *Repository) FindByAccount(accountUUID string) (*Verification, error) {
-	return VerificationRowScanner(r.findByAccountStmt.QueryRow(accountUUID))
+func (r *Repository) FindByAccount(account *account.Account) (*Verification, error) {
+	return VerificationRowScanner(r.findByAccountStmt.QueryRow(account.GetUUID()))
 }
 
 func VerificationRowScanner(row *sql.Row) (*Verification, error) {

@@ -16,13 +16,13 @@ type Verification struct {
 	VerificationHash string `db:"verification_hash"`
 }
 
-func (v *Verification) SetAccountUUID(account *account.Account) {
+func (v *Verification) SetAccount(account *account.Account) {
 	v.AccountUUID = account.GetUUID()
 }
 
-func (v *Verification) SetVerification(length int64) string {
+func (v *Verification) SetCode() string {
 	numericString := ""
-	for i := int64(0); i < length; i++ {
+	for i := int64(0); i < 4; i++ {
 		digit, _ := rand.Int(rand.Reader, big.NewInt(10))
 		numericString += digit.String()
 	}

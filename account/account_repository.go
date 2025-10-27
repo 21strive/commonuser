@@ -62,8 +62,16 @@ func (asql *Repository) Create(db shared.SQLExecutor, account *Account) error {
 }
 
 func (asql *Repository) Update(db shared.SQLExecutor, account *Account) error {
-	query := "UPDATE " + asql.entityName + " SET updated_at = $1, name = $2, username = $3, avatar = $4 WHERE uuid = $5"
-	_, errUpdate := db.Exec(query, account.GetUpdatedAt(), account.Name, account.Username, account.Avatar, account.GetUUID())
+	query := "UPDATE " + asql.entityName +
+		" SET updated_at = $1, name = $2, username = $3, avatar = $4, email_verified = $5, WHERE uuid = $6"
+	_, errUpdate := db.Exec(
+		query,
+		account.GetUpdatedAt(),
+		account.Name,
+		account.Username,
+		account.Avatar,
+		account.EmailVerified,
+		account.GetUUID())
 	if errUpdate != nil {
 		return errUpdate
 	}

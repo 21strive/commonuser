@@ -12,20 +12,20 @@ type Fetchers struct {
 	sessionFetcher *session.SessionFetcher
 }
 
-func (af *Fetchers) FetchByUsername(username string) (*account.Account, bool, *WorkflowError) {
+func (af *Fetchers) FetchByUsername(username string) (*account.Account, bool, error) {
 	accountFromDB, err := af.AccountFetcher.FetchByUsername(username)
 	if err != nil {
-		return nil, false, &WorkflowError{Error: err, Source: "FetchByUsername"}
-	}
-	if accountFromDB == nil {
-		isBlank, errGet := af.AccountFetcher.IsReferenceBlank(username)
-		if errGet != nil {
-			return nil, false, &WorkflowError{Error: errGet, Source: "IsReferenceBlank"}
+		return nil, false, err
+		if accountFromDB == nil {
+			isBlank, errGet := af.AccountFetcher.IsReferenceBlank(username)
+			if errGet != nil {
+				return nil, false, errGet
+			}
+			if isBlank {
+				return nil, false, account.AccountNotFound
+			}
+			return nil, true, account.AccountNotFound
 		}
-		if isBlank {
-			return nil, false, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
-		}
-		return nil, true, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
 	}
 
 	af.AccountFetcher.DelBlankReference(username)
@@ -34,20 +34,20 @@ func (af *Fetchers) FetchByUsername(username string) (*account.Account, bool, *W
 	return accountFromDB, false, nil
 }
 
-func (af *Fetchers) FetchByRandId(randId string) (*account.Account, bool, *WorkflowError) {
+func (af *Fetchers) FetchByRandId(randId string) (*account.Account, bool, error) {
 	accountFromDB, err := af.AccountFetcher.FetchByRandId(randId)
 	if err != nil {
-		return nil, false, &WorkflowError{Error: err, Source: "FetchByRandId"}
+		return nil, false, err
 	}
 	if accountFromDB == nil {
 		isBlank, errGet := af.AccountFetcher.IsBlank(randId)
 		if errGet != nil {
-			return nil, false, &WorkflowError{Error: errGet, Source: "IsBlank"}
+			return nil, false, errGet
 		}
 		if isBlank {
-			return nil, false, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
+			return nil, false, account.AccountNotFound
 		}
-		return nil, true, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
+		return nil, true, account.AccountNotFound
 	}
 
 	af.AccountFetcher.DelBlank(accountFromDB.GetRandId())
@@ -56,15 +56,15 @@ func (af *Fetchers) FetchByRandId(randId string) (*account.Account, bool, *Workf
 	return accountFromDB, false, nil
 }
 
-func (af *Fetchers) FetchAll(sortDir string) ([]account.Account, bool, *WorkflowError) {
+func (af *Fetchers) FetchAll(sortDir string) ([]account.Account, bool, error) {
 	accounts, err := af.AccountFetcher.FetchAll(sortDir)
 	if err != nil {
-		return nil, false, &WorkflowError{Error: err, Source: "FetchAll"}
+		return nil, false, err
 	}
 	if len(accounts) == 0 {
 		isBlank, errCheck := af.AccountFetcher.IsSortedBlank()
 		if errCheck != nil {
-			return nil, false, &WorkflowError{Error: errCheck, Source: "IsBlankPage"}
+			return nil, false, errCheck
 		}
 		if isBlank {
 			return nil, false, nil

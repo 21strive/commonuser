@@ -7,30 +7,27 @@ import (
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/session"
 	"github.com/21strive/commonuser/shared"
+	"github.com/21strive/commonuser/verification"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 	"time"
 )
 
-type WorkflowError struct {
-	Error  error
-	Source string
-}
-
 var SessionNotFound = errors.New("session not found!")
 var InvalidSession = errors.New("invalid session!")
 
-type Command struct {
-	accountRepository *account.Repository
-	sessionRepository *session.Repository
-	config            *config.App
+type Service struct {
+	accountRepository      *account.Repository
+	sessionRepository      *session.Repository
+	verificationRepository *verification.Repository
+	config                 *config.App
 }
 
-func (aw *Command) AccountBase() *redifu.Base[*account.Account] {
+func (aw *Service) AccountBase() *redifu.Base[*account.Account] {
 	return aw.accountRepository.GetBase()
 }
 
-func (aw *Command) SessionBase() *redifu.Base[*session.Session] {
+func (aw *Service) SessionBase() *redifu.Base[*session.Session] {
 	return aw.sessionRepository.GetBase()
 }
 
@@ -40,18 +37,15 @@ type DeviceInfo struct {
 	UserAgent  string
 }
 
-func (aw *Command) AuthenticateByUsername(
+func (aw *Service) AuthenticateByUsername(
 	db shared.SQLExecutor,
 	username string,
 	password string,
 	deviceInfo DeviceInfo,
-) (*string, *string, *WorkflowError) {
+) (*string, *string, error) {
 	accountFromDB, errFindUser := aw.accountRepository.FindByUsername(username)
 	if errFindUser != nil {
-		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
-	}
-	if accountFromDB == nil {
-		return nil, nil, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
+		return nil, nil, errFindUser
 	}
 
 	return aw.Authenticate(
@@ -64,17 +58,14 @@ func (aw *Command) AuthenticateByUsername(
 	)
 }
 
-func (aw *Command) AuthenticateByEmail(
+func (aw *Service) AuthenticateByEmail(
 	db shared.SQLExecutor,
 	email string,
 	password string,
-	deviceInfo DeviceInfo) (*string, *string, *WorkflowError) {
+	deviceInfo DeviceInfo) (*string, *string, error) {
 	accountFromDB, errFindUser := aw.accountRepository.FindByEmail(email)
 	if errFindUser != nil {
-		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
-	}
-	if accountFromDB == nil {
-		return nil, nil, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
+		return nil, nil, errFindUser
 	}
 
 	return aw.Authenticate(
@@ -87,20 +78,20 @@ func (aw *Command) AuthenticateByEmail(
 	)
 }
 
-func (aw *Command) Authenticate(
+func (aw *Service) Authenticate(
 	db shared.SQLExecutor,
 	accountFromDB *account.Account,
 	password string,
 	deviceId string,
 	deviceInfo string,
-	userAgent string) (*string, *string, *WorkflowError) {
+	userAgent string) (*string, *string, error) {
 
 	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(password)
 	if errVerifyPassword != nil {
-		return nil, nil, &WorkflowError{Error: errVerifyPassword, Source: "VerifyPassword"}
+		return nil, nil, errVerifyPassword
 	}
 	if !isAuthenticated {
-		return nil, nil, &WorkflowError{Error: shared.Unauthorized, Source: "WrongPassword"}
+		return nil, nil, shared.Unauthorized
 	}
 
 	session := session.NewSession()
@@ -115,7 +106,7 @@ func (aw *Command) Authenticate(
 
 	err := aw.sessionRepository.Create(db, session)
 	if err != nil {
-		return nil, nil, &WorkflowError{Error: err, Source: "CreateSession"}
+		return nil, nil, err
 	}
 
 	accessToken, errGenerateAccToken := accountFromDB.GenerateAccessToken(
@@ -124,29 +115,29 @@ func (aw *Command) Authenticate(
 		aw.config.JWTLifespan,
 		session.GetRandId())
 	if errGenerateAccToken != nil {
-		return nil, nil, &WorkflowError{Error: errGenerateAccToken, Source: "GenerateAccessToken"}
+		return nil, nil, errGenerateAccToken
 	}
 
 	return &accessToken, &session.RefreshToken, nil
 }
 
-func (aw *Command) RefreshToken(
+func (aw *Service) RefreshToken(
 	db shared.SQLExecutor,
 	account *account.Account,
 	refreshToken string,
-) (*string, *string, *WorkflowError) {
+) (*string, *string, error) {
 
 	session, errFind := aw.sessionRepository.FindByHash(refreshToken)
 	if errFind != nil {
-		return nil, nil, &WorkflowError{Error: errFind, Source: "FindByRefreshToken"}
+		return nil, nil, errFind
 	}
 	if session == nil {
-		return nil, nil, &WorkflowError{Error: SessionNotFound, Source: "InvalidSession"}
+		return nil, nil, SessionNotFound
 	}
 
 	valid := session.IsValid()
 	if !valid {
-		return nil, nil, &WorkflowError{Error: InvalidSession, Source: "InvalidSession"}
+		return nil, nil, InvalidSession
 	}
 
 	// generate new refresh token
@@ -154,24 +145,43 @@ func (aw *Command) RefreshToken(
 	session.SetLastActiveAt(time.Now().UTC())
 	errUpdate := aw.sessionRepository.Update(db, session)
 	if errUpdate != nil {
-		return nil, nil, &WorkflowError{Error: errUpdate, Source: "UpdateRefreshToken"}
+		return nil, nil, errUpdate
 	}
 
 	newAccessToken, errGenerate := account.GenerateAccessToken(aw.config.JWTSecret, aw.config.JWTIssuer, aw.config.JWTLifespan, session.GetRandId())
 	if errGenerate != nil {
-		return nil, nil, &WorkflowError{Error: errGenerate, Source: "GenerateAccessToken"}
+		return nil, nil, errGenerate
 	}
 
 	return &newAccessToken, &session.RefreshToken, nil
 }
 
-func (aw *Command) Register(db shared.SQLExecutor, newAccount *account.Account) (*account.Account, *WorkflowError) {
-	errCreateAcc := aw.accountRepository.Create(db, newAccount)
-	if errCreateAcc != nil {
-		return nil, &WorkflowError{Error: errCreateAcc, Source: "Create"}
+func (aw *Service) Register(
+	db shared.SQLExecutor,
+	newAccount *account.Account,
+	requireVerification bool,
+) (*account.Account, *verification.Verification, error) {
+	if !requireVerification {
+		newAccount.SetEmailVerified()
 	}
 
-	return newAccount, nil
+	errCreateAcc := aw.accountRepository.Create(db, newAccount)
+
+	var newVerification *verification.Verification
+	if requireVerification {
+		newVerification = verification.NewVerification()
+		newVerification.SetAccount(newAccount)
+		newVerification.SetCode()
+		errCreateVerification := aw.verificationRepository.Create(db, newVerification)
+		if errCreateVerification != nil {
+			return nil, nil, errCreateVerification
+		}
+	}
+	if errCreateAcc != nil {
+		return nil, nil, errCreateAcc
+	}
+
+	return newAccount, newVerification, nil
 }
 
 type UpdateOpt struct {
@@ -180,7 +190,7 @@ type UpdateOpt struct {
 	NewAvatar   string
 }
 
-func (aw *Command) Update(db shared.SQLExecutor, accountUUID string, opt UpdateOpt) error {
+func (aw *Service) Update(db shared.SQLExecutor, accountUUID string, opt UpdateOpt) error {
 	accountFromDB, errFind := aw.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return errFind
@@ -205,48 +215,97 @@ func (aw *Command) Update(db shared.SQLExecutor, accountUUID string, opt UpdateO
 	return aw.accountRepository.UpdateReference(accountFromDB, oldUsername, accountFromDB.Username)
 }
 
-func (aw *Command) Delete(db shared.SQLExecutor, account *account.Account) *WorkflowError {
+func (aw *Service) Verify(db shared.SQLExecutor, accountUUID string, code string) error {
+	accountFromDB, errFind := aw.accountRepository.FindByUUID(accountUUID)
+	if errFind != nil {
+		return errFind
+	}
+
+	verificationFromDB, errFind := aw.verificationRepository.FindByAccount(accountFromDB)
+	if errFind != nil {
+		return errFind
+	}
+
+	isValid := verificationFromDB.Validate(code)
+	if !isValid {
+		return verification.InvalidVerificationCode
+	}
+
+	accountFromDB.SetEmailVerified()
+	errUpdate := aw.accountRepository.Update(db, accountFromDB)
+	if errUpdate != nil {
+		return errUpdate
+	}
+
+	return aw.verificationRepository.Delete(db, verificationFromDB)
+}
+
+func (aw *Service) ResendVerification(db shared.SQLExecutor, accountUUID string) (*verification.Verification, error) {
+	accountFromDB, errFind := aw.accountRepository.FindByUUID(accountUUID)
+	if errFind != nil {
+		return nil, errFind
+	}
+
+	var verificationData *verification.Verification
+	verificationData, errFind = aw.verificationRepository.FindByAccount(accountFromDB)
+	if errFind != nil {
+		if errFind == verification.VerificationNotFound {
+			verificationData = verification.NewVerification()
+			verificationData.SetAccount(accountFromDB)
+			verificationData.SetCode()
+			errCreateVerification := aw.verificationRepository.Create(db, verificationData)
+			if errCreateVerification != nil {
+				return nil, errCreateVerification
+			}
+
+			return verificationData, nil
+		}
+	}
+
+	verificationData.SetCode()
+	errUpdate := aw.verificationRepository.Update(db, verificationData)
+	if errUpdate != nil {
+		return nil, errUpdate
+	}
+
+	return verificationData, nil
+}
+
+func (aw *Service) Delete(db shared.SQLExecutor, account *account.Account) error {
 	errDel := aw.accountRepository.Delete(db, account)
 	if errDel != nil {
-		return &WorkflowError{Error: errDel, Source: "Delete"}
+		return errDel
 	}
 
 	return nil
 }
 
-func (aw *Command) PingSession(db shared.SQLExecutor, sessionRandId string) *WorkflowError {
+func (aw *Service) PingSession(db shared.SQLExecutor, sessionRandId string) error {
 	session, errFind := aw.sessionRepository.FindByRandId(sessionRandId)
 	if errFind != nil {
-		return &WorkflowError{
-			Error: errFind,
-		}
-	}
-	if session == nil {
-		return nil
+		return errFind
 	}
 
 	session.SetLastActiveAt(time.Now().UTC())
 	errUpdateSess := aw.sessionRepository.Update(db, session)
 	if errUpdateSess != nil {
-		return &WorkflowError{
-			Error: errUpdateSess,
-		}
+		return errUpdateSess
 	}
 
 	return nil
 }
 
-func (aw *Command) SeedAccount() *WorkflowError {
+func (aw *Service) SeedAccount() error {
 	errSeed := aw.accountRepository.SeedAllAccount()
 	if errSeed != nil {
-		return &WorkflowError{Error: errSeed, Source: "Seed"}
+		return errSeed
 	}
 
 	return nil
 }
 
 type AccountFinder struct {
-	aw *Command
+	aw *Service
 }
 
 func (af *AccountFinder) ByUsername(username string) (*account.Account, error) {
@@ -265,15 +324,15 @@ func (af *AccountFinder) ByEmail(email string) (*account.Account, error) {
 	return af.aw.accountRepository.FindByEmail(email)
 }
 
-func (aw *Command) Find() *AccountFinder {
+func (aw *Service) Find() *AccountFinder {
 	return &AccountFinder{aw: aw}
 }
 
-func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Command {
+func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Service {
 	accountManager := account.NewRepository(readDB, redisClient, app)
 	sessionManager := session.NewRepository(readDB, redisClient, app)
 
-	return &Command{
+	return &Service{
 		accountRepository: accountManager,
 		sessionRepository: sessionManager,
 		config:            app,
