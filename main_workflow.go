@@ -133,7 +133,7 @@ func (aw *Command) RefreshToken(account *account.Account, refreshToken string) (
 	return &newAccessToken, &session.RefreshToken, nil
 }
 
-func (aw *Command) Register(reqBody *request.NativeRegistrationRequest) (*account.Account, *WorkflowError) {
+func (aw *Command) Register(tx *sql.Tx, reqBody *request.NativeRegistrationRequest) (*account.Account, *WorkflowError) {
 	newAccount := account.NewAccount()
 	newAccount.SetEmail(reqBody.Email)
 	newAccount.SetPassword(reqBody.Password)
@@ -148,7 +148,7 @@ func (aw *Command) Register(reqBody *request.NativeRegistrationRequest) (*accoun
 
 	newAccount.SetAvatar(reqBody.Avatar)
 
-	errCreateAcc := aw.accountRepository.Create(newAccount)
+	errCreateAcc := aw.accountRepository.Create(tx, newAccount)
 	if errCreateAcc != nil {
 		return nil, &WorkflowError{Error: errCreateAcc, Source: "Create"}
 	}
@@ -156,8 +156,8 @@ func (aw *Command) Register(reqBody *request.NativeRegistrationRequest) (*accoun
 	return newAccount, nil
 }
 
-func (aw *Command) Delete(account *account.Account) *WorkflowError {
-	errDel := aw.accountRepository.Delete(account)
+func (aw *Command) Delete(tx *sql.Tx, account *account.Account) *WorkflowError {
+	errDel := aw.accountRepository.Delete(tx, account)
 	if errDel != nil {
 		return &WorkflowError{Error: errDel, Source: "Delete"}
 	}
@@ -220,8 +220,8 @@ func (aw *Command) Find() *AccountFinder {
 	return &AccountFinder{aw: aw}
 }
 
-func New(db *sql.DB, redisClient redis.UniversalClient, entityName string, accountConfig *Config) *Command {
-	accountManager := account.NewAccountRepository(db, redisClient, entityName)
+func New(writeDB *sql.DB, readDB *sql.DB, redisClient redis.UniversalClient, entityName string, accountConfig *Config) *Command {
+	accountManager := account.NewAccountRepository(writeDB, readDB, redisClient, entityName)
 	sessionManager := session.NewSessionRepository(db, redisClient, entityName)
 
 	return &Command{

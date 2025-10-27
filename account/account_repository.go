@@ -3,6 +3,7 @@ package account
 import (
 	"database/sql"
 	"errors"
+
 	"github.com/21strive/commonuser/shared"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
@@ -11,7 +12,6 @@ import (
 // key := asql.entityName + ":username:" + account.Username
 
 type AccountRepository struct {
-	db                  *sql.DB
 	redis               redis.UniversalClient
 	base                *redifu.Base[Account]
 	baseReference       *redifu.Base[AccountReference]
@@ -123,12 +123,6 @@ func (asql *AccountRepository) Delete(tx *sql.Tx, account *Account) error {
 
 func (asql *AccountRepository) SeedAllAccount() error {
 	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName
-	rows, err := asql.db.Query(query)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
 	return asql.sortedAccountSeeder.Seed(query, accountRowsScanner, nil, nil)
 }
 
@@ -218,8 +212,7 @@ func (asql *AccountRepository) SeedByRandId(randId string) error {
 }
 
 func (asql *AccountRepository) FindByEmail(email string) (*Account, error) {
-	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE email = $1"
-	return asql.AccountRowScanner(query, email)
+	return AccountRowScanner(asql.findByEmailStmt.QueryRow(email))
 }
 
 func (asql *AccountRepository) SeedByEmail(email string) error {
@@ -247,8 +240,7 @@ func (asql *AccountRepository) SeedByEmail(email string) error {
 }
 
 func (asql *AccountRepository) FindByUUID(uuid string) (*Account, error) {
-	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName + " WHERE uuid = $1"
-	return asql.AccountRowScanner(query, uuid)
+	return AccountRowScanner(asql.findByUUIDStmt.QueryRow(uuid))
 }
 
 func (asql *AccountRepository) SeedByUUID(uuid string) error {
@@ -300,18 +292,34 @@ func AccountRowScanner(row *sql.Row) (*Account, error) {
 	return account, nil
 }
 
-func NewAccountRepository(writeDB *sql.DB, readDB *sql.DB, redis redis.UniversalClient, entityName string) *AccountRepository {
+func NewAccountRepository(readDB *sql.DB, redis redis.UniversalClient, entityName string) *AccountRepository {
 	base := redifu.NewBase[Account](redis, entityName+":%s", shared.BaseTTL)
 	baseReference := redifu.NewBase[AccountReference](redis, entityName+":username:%s", shared.BaseTTL)
 	sortedAccount := redifu.NewSorted[Account](redis, base, "account", shared.SortedSetTTL)
 	sortedAccountSeeder := redifu.NewSortedSQLSeeder[Account](readDB, base, sortedAccount)
 
 	var errPrepare error
-	findByUsernameStmt, errPrepare := readDB.Prepare("SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + entityName + " WHERE username = $1")
+	findByUsernameStmt, errPrepare := readDB.Prepare(
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " +
+			entityName + " WHERE username = $1")
 	if errPrepare != nil {
 		panic(errPrepare)
 	}
-	findByRandId, errPrepare := readDB.Prepare("SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + entityName + " WHERE randId = $1")
+	findByRandId, errPrepare := readDB.Prepare(
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " +
+			entityName + " WHERE randId = $1")
+	if errPrepare != nil {
+		panic(errPrepare)
+	}
+	findByEmailStmt, errPrepare := readDB.Prepare("" +
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " +
+		entityName + " WHERE email = $1")
+	if errPrepare != nil {
+		panic(errPrepare)
+	}
+	findByUUIDStmt, errPrepare := readDB.Prepare(
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " +
+			entityName + " WHERE uuid = $1")
 	if errPrepare != nil {
 		panic(errPrepare)
 	}
@@ -325,90 +333,7 @@ func NewAccountRepository(writeDB *sql.DB, readDB *sql.DB, redis redis.Universal
 		redis:               redis,
 		findByUsernameStmt:  findByUsernameStmt,
 		findByRandIdStmt:    findByRandId,
-	}
-}
-
-type AccountFetchers struct {
-	redis         redis.UniversalClient
-	base          *redifu.Base[Account]
-	baseReference *redifu.Base[AccountReference]
-	sortedAccount *redifu.Sorted[Account]
-	entityName    string
-}
-
-func (af *AccountFetchers) Base() *redifu.Base[Account] {
-	return af.base
-}
-
-func (af *AccountFetchers) FetchByUsername(username string) (*Account, error) {
-	accountRef, errGetRef := af.baseReference.Get(username)
-	if errGetRef != nil {
-		return nil, errGetRef
-	}
-	if accountRef.AccountRandId == "" {
-		return nil, nil
-	}
-
-	account, err := af.base.Get(accountRef.AccountRandId)
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &account, nil
-}
-
-func (af *AccountFetchers) IsReferenceBlank(username string) (bool, error) {
-	return af.baseReference.IsBlank(username)
-}
-
-func (af *AccountFetchers) DelBlankReference(username string) error {
-	return af.baseReference.DelBlank(username)
-}
-
-func (af *AccountFetchers) FetchByRandId(randId string) (*Account, error) {
-	account, err := af.base.Get(randId)
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &account, nil
-}
-
-func (af *AccountFetchers) IsBlank(randId string) (bool, error) {
-	return af.base.IsBlank(randId)
-}
-
-func (af *AccountFetchers) DelBlank(randId string) error {
-	return af.base.DelBlank(randId)
-}
-
-func (af *AccountFetchers) FetchAll(sortDir string) ([]Account, error) {
-	account, err := af.sortedAccount.Fetch(nil, sortDir, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return account, nil
-}
-
-func (af *AccountFetchers) IsSortedBlank() (bool, error) {
-	return af.sortedAccount.IsBlankPage(nil)
-}
-
-func (af *AccountFetchers) DelSortedBlank() error {
-	return af.sortedAccount.DelBlankPage(nil)
-}
-
-func NewAccountFetchers(redis redis.UniversalClient, entityName string) *AccountFetchers {
-	base := redifu.NewBase[Account](redis, entityName+":%s", shared.BaseTTL)
-	sortedAccount := redifu.NewSorted[Account](redis, base, "account", shared.SortedSetTTL)
-	return &AccountFetchers{
-		redis:         redis,
-		base:          base,
-		sortedAccount: sortedAccount,
-		entityName:    entityName,
+		findByEmailStmt:     findByEmailStmt,
+		findByUUIDStmt:      findByUUIDStmt,
 	}
 }
