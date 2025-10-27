@@ -9,10 +9,10 @@ import (
 )
 
 type ResetPassword struct {
-	*redifu.SQLItem `bson:",inline" json:",inline"`
-	AccountUUID     string    `db:"accountuuid"`
-	Token           string    `db:"token"`
-	ExpiredAt       time.Time `db:"expiredat"`
+	*redifu.Record `bson:",inline" json:",inline"`
+	AccountUUID    string    `db:"accountuuid"`
+	Token          string    `db:"token"`
+	ExpiredAt      time.Time `db:"expiredat"`
 }
 
 func (rpsql *ResetPassword) SetAccountUUID(account *account.Account) {
@@ -40,6 +40,6 @@ func (rpsql *ResetPassword) Validate(token string) error {
 
 func NewResetPasswordSQL() ResetPassword {
 	request := ResetPassword{}
-	redifu.InitSQLItem(&request)
+	redifu.InitRecord(&request)
 	return request
 }

@@ -2,12 +2,13 @@ package commonuser
 
 import (
 	"github.com/21strive/commonuser/account"
+	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/session"
 	"github.com/redis/go-redis/v9"
 )
 
 type Fetchers struct {
-	AccountFetcher *account.AccountFetchers
+	AccountFetcher *account.Fetcher
 	sessionFetcher *session.SessionFetcher
 }
 
@@ -74,9 +75,9 @@ func (af *Fetchers) FetchAll(sortDir string) ([]account.Account, bool, *Workflow
 	return accounts, false, nil
 }
 
-func NewFetchers(redisClient redis.UniversalClient, entityName string) *Fetchers {
-	accountFetcher := account.NewAccountFetchers(redisClient, entityName)
-	sessionFetcher := session.NewSessionFetcher(redisClient, entityName)
+func NewFetchers(redisClient redis.UniversalClient, app *config.App) *Fetchers {
+	accountFetcher := account.NewAccountFetchers(redisClient, app)
+	sessionFetcher := session.NewSessionFetcher(redisClient, app)
 	return &Fetchers{
 		AccountFetcher: accountFetcher,
 		sessionFetcher: sessionFetcher,

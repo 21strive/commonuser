@@ -9,16 +9,16 @@ import (
 )
 
 type Session struct {
-	*redifu.SQLItem `bson:",inline" json:",inline"`
-	LastActiveAt    time.Time `json:"lastloginat"`
-	AccountUUID     string    `json:"accountuuid"`
-	DeviceId        string    `json:"deviceid"`
-	DeviceInfo      string    `json:"deviceinfo"`
-	UserAgent       string    `json:"useragent"`
-	RefreshToken    string    `json:"refreshToken"`
-	ExpiresAt       time.Time `json:"expiresAt"`
-	IsActive        bool      `json:"revoked"`
-	DeactivatedAt   time.Time `json:"deactivatedAt"`
+	*redifu.Record `bson:",inline" json:",inline"`
+	LastActiveAt   time.Time `json:"lastloginat"`
+	AccountUUID    string    `json:"accountuuid"`
+	DeviceId       string    `json:"deviceid"`
+	DeviceInfo     string    `json:"deviceinfo"`
+	UserAgent      string    `json:"useragent"`
+	RefreshToken   string    `json:"refreshToken"`
+	ExpiresAt      time.Time `json:"expiresAt"`
+	IsActive       bool      `json:"revoked"`
+	DeactivatedAt  time.Time `json:"deactivatedAt"`
 }
 
 func (s *Session) SetLastActiveAt(lastActiveAt time.Time) {
@@ -81,7 +81,7 @@ func (s *Session) IsValid() bool {
 
 func NewSession() *Session {
 	session := &Session{}
-	redifu.InitSQLItem(session)
+	redifu.InitRecord(session)
 	session.IsActive = true // active by default
 	return session
 }
