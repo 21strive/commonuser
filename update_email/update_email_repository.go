@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-type UpdateEmailManagerSQL struct {
+type Repository struct {
 	db         *sql.DB
 	entityName string
 }
 
-func (em *UpdateEmailManagerSQL) CreateRequest(account account.Account, newEmailAddress string) (*UpdateEmail, error) {
+func (em *Repository) CreateRequest(account account.Account, newEmailAddress string) (*UpdateEmail, error) {
 	updateEmailRequest := NewUpdateEmailRequestSQL()
 	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
 	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
@@ -40,7 +40,7 @@ func (em *UpdateEmailManagerSQL) CreateRequest(account account.Account, newEmail
 	return &updateEmailRequest, nil
 }
 
-func (em *UpdateEmailManagerSQL) FindRequest(account account.Account) (*UpdateEmail, error) {
+func (em *Repository) FindRequest(account account.Account) (*UpdateEmail, error) {
 	tableName := em.entityName + "_update_email"
 	query := `SELECT * FROM ` + tableName + ` WHERE account_uuid = $1`
 	row := em.db.QueryRow(query, account.GetUUID())
@@ -74,7 +74,7 @@ func (em *UpdateEmailManagerSQL) FindRequest(account account.Account) (*UpdateEm
 	return &updateEmailRequest, nil
 }
 
-func (em *UpdateEmailManagerSQL) DeleteRequest(request *UpdateEmail) error {
+func (em *Repository) DeleteRequest(request *UpdateEmail) error {
 	tableName := em.entityName + "_update_email"
 	query := `DELETE FROM ` + tableName + ` WHERE uuid = $1`
 	_, errDelete := em.db.Exec(query, request.GetUUID())
@@ -84,7 +84,7 @@ func (em *UpdateEmailManagerSQL) DeleteRequest(request *UpdateEmail) error {
 	return nil
 }
 
-func (em *UpdateEmailManagerSQL) ValidateRequest(account account.Account, updateToken string) error {
+func (em *Repository) ValidateRequest(account account.Account, updateToken string) error {
 	request, errFind := em.FindRequest(account)
 	if errFind != nil {
 		return errFind
@@ -103,8 +103,8 @@ func (em *UpdateEmailManagerSQL) ValidateRequest(account account.Account, update
 	return nil
 }
 
-func NewUpdateEmailManagerSQL(db *sql.DB, entityName string) *UpdateEmailManagerSQL {
-	return &UpdateEmailManagerSQL{
+func NewUpdateEmailManagerSQL(db *sql.DB, entityName string) *Repository {
+	return &Repository{
 		db:         db,
 		entityName: entityName,
 	}

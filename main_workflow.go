@@ -328,6 +328,20 @@ func (aw *Service) Find() *AccountFinder {
 	return &AccountFinder{aw: aw}
 }
 
+type EmailUpdate struct {
+	s *Service
+}
+
+func (eu *EmailUpdate) Request() {}
+
+func (eu *EmailUpdate) Validate() {}
+
+func (eu *EmailUpdate) Revoke() {}
+
+func (aw *Service) EmailUpdate() *EmailUpdate {
+	return &EmailUpdate{s: aw}
+}
+
 func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Service {
 	accountManager := account.NewRepository(readDB, redisClient, app)
 	sessionManager := session.NewRepository(readDB, redisClient, app)
