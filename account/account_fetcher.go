@@ -2,13 +2,13 @@ package account
 
 import (
 	"errors"
+	"github.com/21strive/commonuser/config"
 
-	"github.com/21strive/commonuser/shared"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 )
 
-type AccountFetchers struct {
+type Fetcher struct {
 	redis         redis.UniversalClient
 	base          *redifu.Base[Account]
 	baseReference *redifu.Base[AccountReference]
@@ -16,11 +16,11 @@ type AccountFetchers struct {
 	entityName    string
 }
 
-func (af *AccountFetchers) Base() *redifu.Base[Account] {
+func (af *Fetcher) Base() *redifu.Base[Account] {
 	return af.base
 }
 
-func (af *AccountFetchers) FetchByUsername(username string) (*Account, error) {
+func (af *Fetcher) FetchByUsername(username string) (*Account, error) {
 	accountRef, errGetRef := af.baseReference.Get(username)
 	if errGetRef != nil {
 		return nil, errGetRef
@@ -39,15 +39,15 @@ func (af *AccountFetchers) FetchByUsername(username string) (*Account, error) {
 	return &account, nil
 }
 
-func (af *AccountFetchers) IsReferenceBlank(username string) (bool, error) {
+func (af *Fetcher) IsReferenceBlank(username string) (bool, error) {
 	return af.baseReference.IsBlank(username)
 }
 
-func (af *AccountFetchers) DelBlankReference(username string) error {
+func (af *Fetcher) DelBlankReference(username string) error {
 	return af.baseReference.DelBlank(username)
 }
 
-func (af *AccountFetchers) FetchByRandId(randId string) (*Account, error) {
+func (af *Fetcher) FetchByRandId(randId string) (*Account, error) {
 	account, err := af.base.Get(randId)
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
@@ -58,15 +58,15 @@ func (af *AccountFetchers) FetchByRandId(randId string) (*Account, error) {
 	return &account, nil
 }
 
-func (af *AccountFetchers) IsBlank(randId string) (bool, error) {
+func (af *Fetcher) IsBlank(randId string) (bool, error) {
 	return af.base.IsBlank(randId)
 }
 
-func (af *AccountFetchers) DelBlank(randId string) error {
+func (af *Fetcher) DelBlank(randId string) error {
 	return af.base.DelBlank(randId)
 }
 
-func (af *AccountFetchers) FetchAll(sortDir string) ([]Account, error) {
+func (af *Fetcher) FetchAll(sortDir string) ([]Account, error) {
 	account, err := af.sortedAccount.Fetch(nil, sortDir, nil, nil)
 	if err != nil {
 		return nil, err
@@ -74,21 +74,21 @@ func (af *AccountFetchers) FetchAll(sortDir string) ([]Account, error) {
 	return account, nil
 }
 
-func (af *AccountFetchers) IsSortedBlank() (bool, error) {
+func (af *Fetcher) IsSortedBlank() (bool, error) {
 	return af.sortedAccount.IsBlankPage(nil)
 }
 
-func (af *AccountFetchers) DelSortedBlank() error {
+func (af *Fetcher) DelSortedBlank() error {
 	return af.sortedAccount.DelBlankPage(nil)
 }
 
-func NewAccountFetchers(redis redis.UniversalClient, entityName string) *AccountFetchers {
-	base := redifu.NewBase[Account](redis, entityName+":%s", shared.BaseTTL)
-	sortedAccount := redifu.NewSorted[Account](redis, base, "account", shared.SortedSetTTL)
-	return &AccountFetchers{
+func NewAccountFetchers(redis redis.UniversalClient, app *config.App) *Fetcher {
+	base := redifu.NewBase[Account](redis, app.EntityName+":%s", app.RecordAge)
+	sortedAccount := redifu.NewSorted[Account](redis, base, "account", app.PaginationAge)
+	return &Fetcher{
 		redis:         redis,
 		base:          base,
 		sortedAccount: sortedAccount,
-		entityName:    entityName,
+		entityName:    app.EntityName,
 	}
 }

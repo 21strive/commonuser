@@ -1,14 +1,11 @@
 package account
 
 import (
-	"errors"
 	"github.com/21strive/redifu"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/matthewhartstonge/argon2"
 	"time"
 )
-
-var AccountNotFound = errors.New("account not found!")
 
 type UserClaims struct {
 	UUID      string `json:"uuid"` // user uuid
@@ -36,6 +33,7 @@ type Base struct {
 	PasswordUpdatedAt time.Time           `json:"-" db:"passwordupdatedat"`
 	Email             string              `json:"email,omitempty" db:"email"`
 	Avatar            string              `json:"avatar,omitempty" db:"avatar"`
+	EmailVerified     bool                `json:"email_verified,omitempty"`
 	AssociatedAccount []AssociatedAccount `json:"associatedAccount,omitempty" db:"-"`
 	Suspended         bool                `json:"suspended,omitempty" db:"suspended"`
 }
@@ -73,6 +71,10 @@ func (b *Base) VerifyPassword(password string) (bool, error) {
 
 func (b *Base) SetEmail(email string) {
 	b.Email = email
+}
+
+func (b *Base) SetEmailVerified() {
+	b.EmailVerified = true
 }
 
 func (b *Base) SetAvatar(avatar string) {
@@ -140,6 +142,7 @@ func NewAccount() *Account {
 	account := &Account{
 		Base: Base{},
 	}
+	account.EmailVerified = false
 	redifu.InitSQLItem(account)
 	return account
 }

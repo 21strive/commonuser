@@ -28,6 +28,8 @@ type DeviceInformation struct {
 }
 
 type PatchRequestBody struct {
-	Name   string `json:"name"`
-	Avatar string `json:"avatar"`
+	AccountUUID string `json:"accountuuid"`
+	Name        string `json:"name"`
+	Username    string `json:"username"`
+	Avatar      string `json:"avatar"`
 }

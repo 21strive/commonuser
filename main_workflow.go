@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/21strive/commonuser/account"
+	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/request"
 	"github.com/21strive/commonuser/session"
 	"github.com/21strive/commonuser/shared"
@@ -21,29 +22,21 @@ type WorkflowError struct {
 var SessionNotFound = errors.New("session not found!")
 var InvalidSession = errors.New("invalid session!")
 
-type Config struct {
-	EntityName    string
-	TokenLifespan time.Duration
-	JWTSecret     string
-	JWTIssuer     string
-	JWTLifespan   time.Duration
-}
-
 type Command struct {
-	accountRepository *account.AccountRepository
-	sessionRepository *session.SessionRepository
-	config            *Config
+	accountRepository *account.Repository
+	sessionRepository *session.Repository
+	config            *config.App
 }
 
-func (aw *Command) AccountBase() *redifu.Base[account.Account] {
+func (aw *Command) AccountBase() *redifu.Base[*account.Account] {
 	return aw.accountRepository.GetBase()
 }
 
-func (aw *Command) SessionBase() *redifu.Base[session.Session] {
-	return aw.sessionRepository.Base()
+func (aw *Command) SessionBase() *redifu.Base[*session.Session] {
+	return aw.sessionRepository.GetBase()
 }
 
-func (aw *Command) AuthenticateByUsername(req *request.NativeAuthRequest) (*string, *string, *WorkflowError) {
+func (aw *Command) AuthenticateByUsername(db shared.SQLExecutor, req *request.NativeAuthRequest) (*string, *string, *WorkflowError) {
 	accountFromDB, errFindUser := aw.accountRepository.FindByUsername(req.Username)
 	if errFindUser != nil {
 		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
@@ -52,10 +45,10 @@ func (aw *Command) AuthenticateByUsername(req *request.NativeAuthRequest) (*stri
 		return nil, nil, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
 	}
 
-	return aw.Authenticate(accountFromDB, req.Password, req.DeviceId, req.DeviceInfo, req.UserAgent)
+	return aw.Authenticate(db, accountFromDB, req.Password, req.DeviceId, req.DeviceInfo, req.UserAgent)
 }
 
-func (aw *Command) AuthenticateByEmail(req *request.NativeAuthByEmailRequest) (*string, *string, *WorkflowError) {
+func (aw *Command) AuthenticateByEmail(db shared.SQLExecutor, req *request.NativeAuthByEmailRequest) (*string, *string, *WorkflowError) {
 	accountFromDB, errFindUser := aw.accountRepository.FindByEmail(req.Email)
 	if errFindUser != nil {
 		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
@@ -64,12 +57,16 @@ func (aw *Command) AuthenticateByEmail(req *request.NativeAuthByEmailRequest) (*
 		return nil, nil, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
 	}
 
-	return aw.Authenticate(accountFromDB, req.Password, req.DeviceId, req.DeviceInfo, req.UserAgent)
+	return aw.Authenticate(db, accountFromDB, req.Password, req.DeviceId, req.DeviceInfo, req.UserAgent)
 }
 
 func (aw *Command) Authenticate(
-	accountFromDB *account.Account, password string, deviceId string,
-	deviceInfo string, userAgent string) (*string, *string, *WorkflowError) {
+	db shared.SQLExecutor,
+	accountFromDB *account.Account,
+	password string,
+	deviceId string,
+	deviceInfo string,
+	userAgent string) (*string, *string, *WorkflowError) {
 
 	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(password)
 	if errVerifyPassword != nil {
@@ -89,12 +86,16 @@ func (aw *Command) Authenticate(
 	session.SetLifeSpan(aw.config.TokenLifespan)
 	session.GenerateRefreshToken()
 
-	err := aw.sessionRepository.Create(session)
+	err := aw.sessionRepository.Create(db, session)
 	if err != nil {
 		return nil, nil, &WorkflowError{Error: err, Source: "CreateSession"}
 	}
 
-	accessToken, errGenerateAccToken := accountFromDB.GenerateAccessToken(aw.config.JWTSecret, aw.config.JWTIssuer, aw.config.JWTLifespan, session.GetRandId())
+	accessToken, errGenerateAccToken := accountFromDB.GenerateAccessToken(
+		aw.config.JWTSecret,
+		aw.config.JWTIssuer,
+		aw.config.JWTLifespan,
+		session.GetRandId())
 	if errGenerateAccToken != nil {
 		return nil, nil, &WorkflowError{Error: errGenerateAccToken, Source: "GenerateAccessToken"}
 	}
@@ -102,7 +103,11 @@ func (aw *Command) Authenticate(
 	return &accessToken, &session.RefreshToken, nil
 }
 
-func (aw *Command) RefreshToken(account *account.Account, refreshToken string) (*string, *string, *WorkflowError) {
+func (aw *Command) RefreshToken(
+	db shared.SQLExecutor,
+	account *account.Account,
+	refreshToken string,
+) (*string, *string, *WorkflowError) {
 
 	session, errFind := aw.sessionRepository.FindByHash(refreshToken)
 	if errFind != nil {
@@ -120,7 +125,7 @@ func (aw *Command) RefreshToken(account *account.Account, refreshToken string) (
 	// generate new refresh token
 	session.GenerateRefreshToken()
 	session.SetLastActiveAt(time.Now().UTC())
-	errUpdate := aw.sessionRepository.Update(session)
+	errUpdate := aw.sessionRepository.Update(db, session)
 	if errUpdate != nil {
 		return nil, nil, &WorkflowError{Error: errUpdate, Source: "UpdateRefreshToken"}
 	}
@@ -133,7 +138,7 @@ func (aw *Command) RefreshToken(account *account.Account, refreshToken string) (
 	return &newAccessToken, &session.RefreshToken, nil
 }
 
-func (aw *Command) Register(tx *sql.Tx, reqBody *request.NativeRegistrationRequest) (*account.Account, *WorkflowError) {
+func (aw *Command) Register(db shared.SQLExecutor, reqBody *request.NativeRegistrationRequest) (*account.Account, *WorkflowError) {
 	newAccount := account.NewAccount()
 	newAccount.SetEmail(reqBody.Email)
 	newAccount.SetPassword(reqBody.Password)
@@ -148,7 +153,7 @@ func (aw *Command) Register(tx *sql.Tx, reqBody *request.NativeRegistrationReque
 
 	newAccount.SetAvatar(reqBody.Avatar)
 
-	errCreateAcc := aw.accountRepository.Create(tx, newAccount)
+	errCreateAcc := aw.accountRepository.Create(db, newAccount)
 	if errCreateAcc != nil {
 		return nil, &WorkflowError{Error: errCreateAcc, Source: "Create"}
 	}
@@ -156,8 +161,33 @@ func (aw *Command) Register(tx *sql.Tx, reqBody *request.NativeRegistrationReque
 	return newAccount, nil
 }
 
-func (aw *Command) Delete(tx *sql.Tx, account *account.Account) *WorkflowError {
-	errDel := aw.accountRepository.Delete(tx, account)
+func (aw *Command) Update(db shared.SQLExecutor, reqBody *request.PatchRequestBody) error {
+	accountFromDB, errFind := aw.accountRepository.FindByUUID(reqBody.AccountUUID)
+	if errFind != nil {
+		return errFind
+	}
+
+	oldUsername := accountFromDB.Username
+	if reqBody.Name != "" {
+		accountFromDB.SetName(reqBody.Name)
+	}
+	if reqBody.Username != "" {
+		accountFromDB.SetUsername(reqBody.Username)
+	}
+	if reqBody.Avatar != "" {
+		accountFromDB.SetAvatar(reqBody.Avatar)
+	}
+
+	errSet := aw.accountRepository.Update(db, accountFromDB)
+	if errSet != nil {
+		return errSet
+	}
+
+	return aw.accountRepository.UpdateReference(accountFromDB, oldUsername, accountFromDB.Username)
+}
+
+func (aw *Command) Delete(db shared.SQLExecutor, account *account.Account) *WorkflowError {
+	errDel := aw.accountRepository.Delete(db, account)
 	if errDel != nil {
 		return &WorkflowError{Error: errDel, Source: "Delete"}
 	}
@@ -165,7 +195,7 @@ func (aw *Command) Delete(tx *sql.Tx, account *account.Account) *WorkflowError {
 	return nil
 }
 
-func (aw *Command) PingSession(sessionRandId string) *WorkflowError {
+func (aw *Command) PingSession(db shared.SQLExecutor, sessionRandId string) *WorkflowError {
 	session, errFind := aw.sessionRepository.FindByRandId(sessionRandId)
 	if errFind != nil {
 		return &WorkflowError{
@@ -177,7 +207,7 @@ func (aw *Command) PingSession(sessionRandId string) *WorkflowError {
 	}
 
 	session.SetLastActiveAt(time.Now().UTC())
-	errUpdateSess := aw.sessionRepository.Update(session)
+	errUpdateSess := aw.sessionRepository.Update(db, session)
 	if errUpdateSess != nil {
 		return &WorkflowError{
 			Error: errUpdateSess,
@@ -220,13 +250,13 @@ func (aw *Command) Find() *AccountFinder {
 	return &AccountFinder{aw: aw}
 }
 
-func New(writeDB *sql.DB, readDB *sql.DB, redisClient redis.UniversalClient, entityName string, accountConfig *Config) *Command {
-	accountManager := account.NewAccountRepository(writeDB, readDB, redisClient, entityName)
-	sessionManager := session.NewSessionRepository(db, redisClient, entityName)
+func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Command {
+	accountManager := account.NewRepository(readDB, redisClient, app)
+	sessionManager := session.NewRepository(readDB, redisClient, app)
 
 	return &Command{
 		accountRepository: accountManager,
 		sessionRepository: sessionManager,
-		config:            accountConfig,
+		config:            app,
 	}
 }
