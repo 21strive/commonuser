@@ -5,10 +5,8 @@ import (
 	"errors"
 	"github.com/21strive/commonuser/account"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/request"
 	"github.com/21strive/commonuser/session"
 	"github.com/21strive/commonuser/shared"
-	"github.com/21strive/item"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 	"time"
@@ -36,20 +34,19 @@ func (aw *Command) SessionBase() *redifu.Base[*session.Session] {
 	return aw.sessionRepository.GetBase()
 }
 
-func (aw *Command) AuthenticateByUsername(db shared.SQLExecutor, req *request.NativeAuthRequest) (*string, *string, *WorkflowError) {
-	accountFromDB, errFindUser := aw.accountRepository.FindByUsername(req.Username)
-	if errFindUser != nil {
-		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
-	}
-	if accountFromDB == nil {
-		return nil, nil, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
-	}
-
-	return aw.Authenticate(db, accountFromDB, req.Password, req.DeviceId, req.DeviceInfo, req.UserAgent)
+type DeviceInfo struct {
+	DeviceId   string
+	DeviceInfo string
+	UserAgent  string
 }
 
-func (aw *Command) AuthenticateByEmail(db shared.SQLExecutor, req *request.NativeAuthByEmailRequest) (*string, *string, *WorkflowError) {
-	accountFromDB, errFindUser := aw.accountRepository.FindByEmail(req.Email)
+func (aw *Command) AuthenticateByUsername(
+	db shared.SQLExecutor,
+	username string,
+	password string,
+	deviceInfo DeviceInfo,
+) (*string, *string, *WorkflowError) {
+	accountFromDB, errFindUser := aw.accountRepository.FindByUsername(username)
 	if errFindUser != nil {
 		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
 	}
@@ -57,7 +54,37 @@ func (aw *Command) AuthenticateByEmail(db shared.SQLExecutor, req *request.Nativ
 		return nil, nil, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
 	}
 
-	return aw.Authenticate(db, accountFromDB, req.Password, req.DeviceId, req.DeviceInfo, req.UserAgent)
+	return aw.Authenticate(
+		db,
+		accountFromDB,
+		password,
+		deviceInfo.DeviceId,
+		deviceInfo.DeviceInfo,
+		deviceInfo.UserAgent,
+	)
+}
+
+func (aw *Command) AuthenticateByEmail(
+	db shared.SQLExecutor,
+	email string,
+	password string,
+	deviceInfo DeviceInfo) (*string, *string, *WorkflowError) {
+	accountFromDB, errFindUser := aw.accountRepository.FindByEmail(email)
+	if errFindUser != nil {
+		return nil, nil, &WorkflowError{Error: errFindUser, Source: "FindUser"}
+	}
+	if accountFromDB == nil {
+		return nil, nil, &WorkflowError{Error: account.AccountNotFound, Source: "AccountNotFound"}
+	}
+
+	return aw.Authenticate(
+		db,
+		accountFromDB,
+		password,
+		deviceInfo.DeviceId,
+		deviceInfo.DeviceInfo,
+		deviceInfo.UserAgent,
+	)
 }
 
 func (aw *Command) Authenticate(
@@ -138,21 +165,7 @@ func (aw *Command) RefreshToken(
 	return &newAccessToken, &session.RefreshToken, nil
 }
 
-func (aw *Command) Register(db shared.SQLExecutor, reqBody *request.NativeRegistrationRequest) (*account.Account, *WorkflowError) {
-	newAccount := account.NewAccount()
-	newAccount.SetEmail(reqBody.Email)
-	newAccount.SetPassword(reqBody.Password)
-	newAccount.SetName(reqBody.Name)
-
-	if reqBody.Username != "" {
-		newAccount.SetUsername(reqBody.Username)
-	} else {
-		randUsername := item.RandId()
-		newAccount.SetUsername(randUsername)
-	}
-
-	newAccount.SetAvatar(reqBody.Avatar)
-
+func (aw *Command) Register(db shared.SQLExecutor, newAccount *account.Account) (*account.Account, *WorkflowError) {
 	errCreateAcc := aw.accountRepository.Create(db, newAccount)
 	if errCreateAcc != nil {
 		return nil, &WorkflowError{Error: errCreateAcc, Source: "Create"}
@@ -161,21 +174,27 @@ func (aw *Command) Register(db shared.SQLExecutor, reqBody *request.NativeRegist
 	return newAccount, nil
 }
 
-func (aw *Command) Update(db shared.SQLExecutor, reqBody *request.PatchRequestBody) error {
-	accountFromDB, errFind := aw.accountRepository.FindByUUID(reqBody.AccountUUID)
+type UpdateOpt struct {
+	NewName     string
+	NewUsername string
+	NewAvatar   string
+}
+
+func (aw *Command) Update(db shared.SQLExecutor, accountUUID string, opt UpdateOpt) error {
+	accountFromDB, errFind := aw.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return errFind
 	}
 
 	oldUsername := accountFromDB.Username
-	if reqBody.Name != "" {
-		accountFromDB.SetName(reqBody.Name)
+	if opt.NewName != "" {
+		accountFromDB.SetName(opt.NewName)
 	}
-	if reqBody.Username != "" {
-		accountFromDB.SetUsername(reqBody.Username)
+	if opt.NewUsername != "" {
+		accountFromDB.SetUsername(opt.NewUsername)
 	}
-	if reqBody.Avatar != "" {
-		accountFromDB.SetAvatar(reqBody.Avatar)
+	if opt.NewAvatar != "" {
+		accountFromDB.SetAvatar(opt.NewAvatar)
 	}
 
 	errSet := aw.accountRepository.Update(db, accountFromDB)

@@ -9,7 +9,7 @@ import (
 )
 
 type UpdateEmail struct {
-	*redifu.SQLItem      `bson:",inline" json:",inline"`
+	*redifu.Record       `bson:",inline" json:",inline"`
 	AccountUUID          string    `db:"account_uuid"`
 	PreviousEmailAddress string    `db:"previous_email_address"`
 	NewEmailAddress      string    `db:"new_email_address"`
@@ -52,6 +52,6 @@ func (ue *UpdateEmail) Validate(updateToken string) error {
 
 func NewUpdateEmailRequestSQL() UpdateEmail {
 	ue := UpdateEmail{}
-	redifu.InitSQLItem(&ue)
+	redifu.InitRecord(&ue)
 	return ue
 }

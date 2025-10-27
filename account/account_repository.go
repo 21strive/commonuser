@@ -16,7 +16,7 @@ type Repository struct {
 	base                *redifu.Base[*Account]
 	baseReference       *redifu.Base[*AccountReference]
 	sortedAccount       *redifu.Sorted[*Account]
-	sortedAccountSeeder *redifu.SortedSQLSeeder[*Account]
+	sortedAccountSeeder *redifu.SortedSeeder[*Account]
 	findByUsernameStmt  *sql.Stmt
 	findByRandIdStmt    *sql.Stmt
 	findByEmailStmt     *sql.Stmt
@@ -137,10 +137,10 @@ func (asql *Repository) SeedAllAccount() error {
 func accountRowsScanner(rows *sql.Rows) (*Account, error) {
 	account := NewAccount()
 	err := rows.Scan(
-		&account.SQLItem.UUID,
-		&account.SQLItem.RandId,
-		&account.SQLItem.CreatedAt,
-		&account.SQLItem.UpdatedAt,
+		&account.UUID,
+		&account.RandId,
+		&account.CreatedAt,
+		&account.UpdatedAt,
 		&account.Base.Name,
 		&account.Base.Username,
 		&account.Base.Password,
@@ -271,10 +271,10 @@ func (asql *Repository) SeedByUUID(uuid string) error {
 func AccountRowScanner(row *sql.Row) (*Account, error) {
 	account := NewAccount()
 	err := row.Scan(
-		&account.SQLItem.UUID,
-		&account.SQLItem.RandId,
-		&account.SQLItem.CreatedAt,
-		&account.SQLItem.UpdatedAt,
+		&account.UUID,
+		&account.RandId,
+		&account.CreatedAt,
+		&account.UpdatedAt,
 		&account.Base.Name,
 		&account.Base.Username,
 		&account.Base.Password,
@@ -297,7 +297,7 @@ func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App)
 	base := redifu.NewBase[*Account](redis, app.EntityName+":%s", app.RecordAge)
 	baseReference := redifu.NewBase[*AccountReference](redis, app.EntityName+":username:%s", app.RecordAge)
 	sortedAccount := redifu.NewSorted[*Account](redis, base, "account", app.PaginationAge)
-	sortedAccountSeeder := redifu.NewSortedSQLSeeder[*Account](readDB, base, sortedAccount)
+	sortedAccountSeeder := redifu.NewSortedSeeder[*Account](readDB, base, sortedAccount)
 
 	var errPrepare error
 	findByUsernameStmt, errPrepare := readDB.Prepare(

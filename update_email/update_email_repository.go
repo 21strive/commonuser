@@ -46,10 +46,10 @@ func (em *UpdateEmailManagerSQL) FindRequest(account account.Account) (*UpdateEm
 	row := em.db.QueryRow(query, account.GetUUID())
 	updateEmailRequest := NewUpdateEmailRequestSQL()
 	err := row.Scan(
-		&updateEmailRequest.SQLItem.UUID,
-		&updateEmailRequest.SQLItem.RandId,
-		&updateEmailRequest.SQLItem.CreatedAt,
-		&updateEmailRequest.SQLItem.UpdatedAt,
+		&updateEmailRequest.UUID,
+		&updateEmailRequest.RandId,
+		&updateEmailRequest.CreatedAt,
+		&updateEmailRequest.UpdatedAt,
 		&updateEmailRequest.AccountUUID,
 		&updateEmailRequest.PreviousEmailAddress,
 		&updateEmailRequest.NewEmailAddress,

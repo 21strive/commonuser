@@ -102,7 +102,7 @@ func (b *Base) IsPasswordExist() bool {
 }
 
 type Account struct {
-	*redifu.SQLItem
+	*redifu.Record
 	Base
 }
 
@@ -143,12 +143,12 @@ func NewAccount() *Account {
 		Base: Base{},
 	}
 	account.EmailVerified = false
-	redifu.InitSQLItem(account)
+	redifu.InitRecord(account)
 	return account
 }
 
 type AccountReference struct {
-	*redifu.SQLItem
+	*redifu.Record
 	AccountRandId string `json:"accountRandId"`
 }
 
@@ -158,6 +158,6 @@ func (ar *AccountReference) SetAccountRandId(accountRandId string) {
 
 func NewAccountReference() *AccountReference {
 	accountReference := &AccountReference{}
-	redifu.InitSQLItem(accountReference)
+	redifu.InitRecord(accountReference)
 	return accountReference
 }
