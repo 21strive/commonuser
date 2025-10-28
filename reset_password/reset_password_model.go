@@ -12,10 +12,11 @@ type ResetPassword struct {
 	*redifu.Record `bson:",inline" json:",inline"`
 	AccountUUID    string    `db:"accountuuid"`
 	Token          string    `db:"token"`
+	Processed      bool      `db:"processed"`
 	ExpiredAt      time.Time `db:"expiredat"`
 }
 
-func (rpsql *ResetPassword) SetAccountUUID(account *account.Account) {
+func (rpsql *ResetPassword) SetAccount(account *account.Account) {
 	rpsql.AccountUUID = account.GetUUID()
 }
 
@@ -23,8 +24,16 @@ func (rpsql *ResetPassword) SetToken() {
 	rpsql.Token = item.RandId()
 }
 
-func (rpsql *ResetPassword) SetExpiredAt() {
-	rpsql.ExpiredAt = time.Now().Add(time.Hour * 48)
+func (rpsql *ResetPassword) SetExpiredAt(expirationTime *time.Time) {
+	rpsql.ExpiredAt = *expirationTime
+}
+
+func (rpsql *ResetPassword) IsExpired() bool {
+	return time.Now().UTC().After(rpsql.ExpiredAt)
+}
+
+func (rpsql *ResetPassword) SetProcessed() {
+	rpsql.Processed = true
 }
 
 func (rpsql *ResetPassword) Validate(token string) error {
@@ -38,8 +47,9 @@ func (rpsql *ResetPassword) Validate(token string) error {
 	return nil
 }
 
-func NewResetPasswordSQL() ResetPassword {
-	request := ResetPassword{}
-	redifu.InitRecord(&request)
+func NewResetPassword() *ResetPassword {
+	request := &ResetPassword{}
+	redifu.InitRecord(request)
+	request.ExpiredAt = time.Now().Add(time.Hour * 48)
 	return request
 }

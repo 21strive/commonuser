@@ -19,11 +19,12 @@ var SessionNotFound = errors.New("session not found!")
 var InvalidSession = errors.New("invalid session!")
 
 type Service struct {
-	accountRepository      *account.Repository
-	sessionRepository      *session.Repository
-	verificationRepository *verification.Repository
-	updateEmailRepository  *update_email.Repository
-	config                 *config.App
+	accountRepository       *account.Repository
+	sessionRepository       *session.Repository
+	verificationRepository  *verification.Repository
+	updateEmailRepository   *update_email.Repository
+	resetPasswordRepository *reset_password.Repository
+	config                  *config.App
 }
 
 func (aw *Service) AccountBase() *redifu.Base[*account.Account] {
@@ -339,32 +340,55 @@ func (aw *Service) Find() *AccountFinder {
 	return &AccountFinder{aw: aw}
 }
 
-type EmailUpdate struct {
+type Email struct {
 	s *Service
 }
 
-func (eu *EmailUpdate) Request(db shared.SQLExecutor, account *account.Account, newEmailAddress string) (*update_email.UpdateEmail, error) {
+func (eu *Email) RequestUpdate(
+	db shared.SQLExecutor,
+	account *account.Account,
+	newEmailAddress string,
+) (*update_email.UpdateEmail, error) {
 	requestFromDB, errFind := eu.s.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
 		return nil, errFind
 	}
-
 	if requestFromDB != nil {
-		return requestFromDB, nil
+		if requestFromDB.IsExpired() {
+			errDeleteRequest := eu.s.updateEmailRepository.DeleteRequest(db, requestFromDB)
+			if errDeleteRequest != nil {
+				return nil, errDeleteRequest
+			}
+		} else {
+			return requestFromDB, nil
+		}
 	}
 
-	updateEmailTicket, errCreateTicket := eu.s.updateEmailRepository.CreateRequest(db, account, newEmailAddress)
+	updateEmailRequest := update_email.NewUpdateEmailRequestSQL()
+	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
+	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
+	updateEmailRequest.SetToken()
+	updateEmailRequest.SetExpiration()
+
+	errCreateTicket := eu.s.updateEmailRepository.CreateRequest(db, updateEmailRequest)
 	if errCreateTicket != nil {
 		return nil, errCreateTicket
 	}
 
-	return updateEmailTicket, nil
+	return updateEmailRequest, nil
 }
 
-func (eu *EmailUpdate) Validate(db shared.SQLExecutor, account *account.Account, token string) error {
+func (eu *Email) ValidateUpdate(
+	db shared.SQLExecutor,
+	account *account.Account,
+	token string,
+) error {
 	request, errFind := eu.s.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
 		return errFind
+	}
+	if request.Processed {
+		return nil
 	}
 
 	errValidate := request.Validate(token, false)
@@ -382,10 +406,20 @@ func (eu *EmailUpdate) Validate(db shared.SQLExecutor, account *account.Account,
 		return errUpdate
 	}
 
+	request.SetProcessed()
+	errUpdateTicket := eu.s.updateEmailRepository.UpdateRequest(db, request)
+	if errUpdateTicket != nil {
+		return errUpdateTicket
+	}
+
 	return nil
 }
 
-func (eu *EmailUpdate) Revoke(db shared.SQLExecutor, account *account.Account, token string) error {
+func (eu *Email) RevokeUpdate(
+	db shared.SQLExecutor,
+	account *account.Account,
+	token string,
+) error {
 	request, errFind := eu.s.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
 		return errFind
@@ -402,26 +436,125 @@ func (eu *EmailUpdate) Revoke(db shared.SQLExecutor, account *account.Account, t
 		return errUpdate
 	}
 
+	request.SetRevoked()
+	errUpdateTicket := eu.s.updateEmailRepository.UpdateRequest(db, request)
+	if errUpdateTicket != nil {
+		return errUpdateTicket
+	}
+
 	return nil
 }
 
-func (aw *Service) EmailUpdate() *EmailUpdate {
-	return &EmailUpdate{s: aw}
+func (eu *Email) Delete(db shared.SQLExecutor, account *account.Account) error {
+	requestFromDB, errFind := eu.s.updateEmailRepository.FindRequest(account)
+	if errFind != nil {
+		return errFind
+	}
+
+	return eu.s.updateEmailRepository.DeleteRequest(db, requestFromDB)
 }
 
-type PasswordUpdate struct {
+func (aw *Service) EmailUpdate() *Email {
+	return &Email{s: aw}
+}
+
+type Password struct {
 	s *Service
 }
 
-func (pu *PasswordUpdate) Request(db shared.SQLExecutor, account *account.Account) (*reset_password.ResetPassword, error) {
+func (pu *Password) RequestReset(db shared.SQLExecutor, account *account.Account, expiration *time.Time) (*reset_password.ResetPassword, error) {
+	ticketFromDB, errFind := pu.s.resetPasswordRepository.Find(account)
+	if errFind != nil {
+		return nil, errFind
+	}
+	if ticketFromDB != nil {
+		if ticketFromDB.IsExpired() {
+			errDeleteTicket := pu.s.resetPasswordRepository.Delete(db, ticketFromDB)
+			if errDeleteTicket != nil {
+				return nil, errDeleteTicket
+			}
+		} else {
+			return ticketFromDB, nil
+		}
+	}
 
+	newResetPasswordTicket := reset_password.NewResetPassword()
+	newResetPasswordTicket.SetAccount(account)
+	newResetPasswordTicket.SetToken()
+	if expiration != nil {
+		newResetPasswordTicket.SetExpiredAt(expiration)
+	}
+	errCreate := pu.s.resetPasswordRepository.Create(db, newResetPasswordTicket)
+	if errCreate != nil {
+		return nil, errCreate
+	}
+
+	return newResetPasswordTicket, nil
 }
 
-func (pu *PasswordUpdate) Validate() (*reset_password.ResetPassword, error) {
-	return nil, nil
+func (pu *Password) ValidateReset(
+	db shared.SQLExecutor,
+	account *account.Account,
+	newPassword string,
+	token string) error {
+	ticketFromDB, errFind := pu.s.resetPasswordRepository.Find(account)
+	if errFind != nil {
+		return errFind
+	}
+	if ticketFromDB.Processed {
+		return nil
+	}
+
+	errValidate := ticketFromDB.Validate(token)
+	if errValidate != nil {
+		if errors.Is(errValidate, shared.RequestExpired) {
+			pu.s.resetPasswordRepository.Delete(db, ticketFromDB)
+			return shared.RequestExpired
+		}
+		return errValidate
+	}
+
+	account.SetPassword(newPassword)
+	errUpdate := pu.s.accountRepository.Update(db, account)
+	if errUpdate != nil {
+		return errUpdate
+	}
+
+	ticketFromDB.SetProcessed()
+	errUpdateTicket := pu.s.resetPasswordRepository.Update(db, ticketFromDB)
+	if errUpdateTicket != nil {
+		return errUpdateTicket
+	}
+
+	return nil
 }
 
-func (pu *PasswordUpdate) Revoke() {}
+func (pu *Password) DeleteReset(db shared.SQLExecutor, account *account.Account) error {
+	requestFromDB, errFind := pu.s.resetPasswordRepository.Find(account)
+	if errFind != nil {
+		return errFind
+	}
+
+	return pu.s.resetPasswordRepository.Delete(db, requestFromDB)
+}
+
+func (pu *Password) Update(db shared.SQLExecutor, account *account.Account, oldPassword string, newPassword string) error {
+	accountFromDB, errFind := pu.s.accountRepository.FindByUUID(account.GetUUID())
+	if errFind != nil {
+		return errFind
+	}
+
+	isValid, errValidate := accountFromDB.VerifyPassword(oldPassword)
+	if errValidate != nil {
+		return errValidate
+	}
+	if !isValid {
+		return shared.Unauthorized
+	}
+
+	accountFromDB.SetPassword(newPassword)
+	return pu.s.accountRepository.Update(db, accountFromDB)
+}
 
 func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Service {
 	accountManager := account.NewRepository(readDB, redisClient, app)

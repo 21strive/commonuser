@@ -12,32 +12,37 @@ type Repository struct {
 	findByAccountStmt *sql.Stmt
 }
 
-func (em *Repository) CreateRequest(db shared.SQLExecutor, account *account.Account, newEmailAddress string) (*UpdateEmail, error) {
-	updateEmailRequest := NewUpdateEmailRequestSQL()
-	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
-	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
-	updateEmailRequest.SetToken()
-	updateEmailRequest.SetExpiration()
-
+func (em *Repository) CreateRequest(db shared.SQLExecutor, request *UpdateEmail) error {
 	tableName := em.app.EntityName + "_update_email"
 
 	query := `INSERT INTO ` + tableName + ` (uuid, randId, created_at, updated_at, account_uuid, previous_email_address, new_email_address, update_token, expired_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	_, errInsert := db.Exec(
 		query,
-		updateEmailRequest.GetUUID(),
-		updateEmailRequest.GetRandId(),
-		updateEmailRequest.GetCreatedAt(),
-		updateEmailRequest.GetUpdatedAt(),
-		updateEmailRequest.AccountUUID,
-		updateEmailRequest.PreviousEmailAddress,
-		updateEmailRequest.NewEmailAddress,
-		updateEmailRequest.Token,
-		updateEmailRequest.ExpiredAt)
-	if errInsert != nil {
-		return nil, errInsert
-	}
+		request.GetUUID(),
+		request.GetRandId(),
+		request.GetCreatedAt(),
+		request.GetUpdatedAt(),
+		request.AccountUUID,
+		request.PreviousEmailAddress,
+		request.NewEmailAddress,
+		request.Token,
+		request.ExpiredAt)
 
-	return &updateEmailRequest, nil
+	return errInsert
+}
+
+func (em *Repository) UpdateRequest(db shared.SQLExecutor, request *UpdateEmail) error {
+	tableName := em.app.EntityName + "_update_email"
+	query := `UPDATE ` + tableName + ` SET updated_at = $1, processed = $2, revoked = $3 WHERE uuid = $4`
+	_, errUpdate := db.Exec(
+		query,
+		request.GetUpdatedAt(),
+		request.Processed,
+		request.Revoked,
+		request.GetUUID(),
+	)
+
+	return errUpdate
 }
 
 func (em *Repository) FindRequest(account *account.Account) (*UpdateEmail, error) {
@@ -60,7 +65,7 @@ func (em *Repository) FindRequest(account *account.Account) (*UpdateEmail, error
 		return nil, err
 	}
 
-	return &updateEmailRequest, nil
+	return updateEmailRequest, nil
 }
 
 func (em *Repository) DeleteRequest(db shared.SQLExecutor, request *UpdateEmail) error {
@@ -75,7 +80,9 @@ func (em *Repository) DeleteRequest(db shared.SQLExecutor, request *UpdateEmail)
 
 func NewUpdateEmailManagerSQL(readDB *sql.DB, app *config.App) *Repository {
 	tableName := app.EntityName + "_update_email"
-	findByAccountStmt, errPrepare := readDB.Prepare(`SELECT * FROM ` + tableName + ` WHERE account_uuid = $1`)
+
+	// always find the most recent ticket
+	findByAccountStmt, errPrepare := readDB.Prepare(`SELECT * FROM ` + tableName + ` WHERE account_uuid = $1 ORDER BY created_at DESC LIMIT 1`)
 	if errPrepare != nil {
 		panic(errPrepare)
 	}

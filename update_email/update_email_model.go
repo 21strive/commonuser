@@ -14,6 +14,8 @@ type UpdateEmail struct {
 	PreviousEmailAddress string    `db:"previous_email_address"`
 	NewEmailAddress      string    `db:"new_email_address"`
 	Token                string    `db:"token"`
+	Processed            bool      `db:"processed"`
+	Revoked              bool      `db:"revoked"`
 	ExpiredAt            time.Time `db:"expired_at"`
 }
 
@@ -38,6 +40,14 @@ func (ue *UpdateEmail) SetExpiration() {
 	ue.ExpiredAt = time.Now().Add(time.Hour * 48)
 }
 
+func (ue *UpdateEmail) SetProcessed() {
+	ue.Processed = true
+}
+
+func (ue *UpdateEmail) SetRevoked() {
+	ue.Revoked = true
+}
+
 func (ue *UpdateEmail) Validate(token string, bypassExpiration bool) error {
 	if !bypassExpiration {
 		time := time.Now().UTC()
@@ -49,11 +59,17 @@ func (ue *UpdateEmail) Validate(token string, bypassExpiration bool) error {
 	if ue.Token != token {
 		return shared.InvalidToken
 	}
+
 	return nil
 }
 
-func NewUpdateEmailRequestSQL() UpdateEmail {
-	ue := UpdateEmail{}
-	redifu.InitRecord(&ue)
+func (ue *UpdateEmail) IsExpired() bool {
+	return time.Now().UTC().After(ue.ExpiredAt)
+}
+
+func NewUpdateEmailRequestSQL() *UpdateEmail {
+	ue := &UpdateEmail{}
+	redifu.InitRecord(ue)
+	ue.Processed = false
 	return ue
 }
