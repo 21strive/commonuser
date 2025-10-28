@@ -26,7 +26,7 @@ func (r *Repository) Create(db shared.SQLExecutor, verification *Verification) e
 		verification.GetCreatedAt(),
 		verification.GetUpdatedAt(),
 		verification.AccountUUID,
-		verification.VerificationHash)
+		verification.Code)
 	if errExec != nil {
 		return errExec
 	}
@@ -39,7 +39,7 @@ func (r *Repository) Update(db shared.SQLExecutor, verification *Verification) e
 	query := "UPDATE " + tableName + " SET verification_hash = $1 WHERE uuid = $2"
 	_, errExec := db.Exec(
 		query,
-		verification.VerificationHash,
+		verification.Code,
 		verification.GetUUID(),
 	)
 	if errExec != nil {
@@ -65,13 +65,13 @@ func (r *Repository) FindByAccount(account *account.Account) (*Verification, err
 }
 
 func VerificationRowScanner(row *sql.Row) (*Verification, error) {
-	verification := NewVerification()
+	verification := New()
 	err := row.Scan(
 		&verification.UUID,
 		&verification.CreatedAt,
 		&verification.UpdatedAt,
 		&verification.AccountUUID,
-		&verification.VerificationHash,
+		&verification.Code,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

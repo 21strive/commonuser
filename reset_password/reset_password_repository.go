@@ -14,7 +14,16 @@ type Repository struct {
 
 func (ar *Repository) Create(db shared.SQLExecutor, request *ResetPassword) error {
 	tableName := ar.app.EntityName + "_reset_password"
-	query := `INSERT INTO $1 (uuid, randId, created_at, updated_at, account_uuid, token, expiredat) VALUES ($2, $3, $4, $5, $6, $7, $8)`
+	query := `INSERT INTO ` + tableName + ` (
+		uuid, 
+		randId, 
+		created_at, 
+		updated_at, 
+		account_uuid, 
+		token, 
+		processed,
+		expired_at
+	) VALUES ($2, $3, $4, $5, $6, $7, $8)`
 	_, errInsert := db.Exec(
 		query,
 		tableName,
@@ -24,6 +33,7 @@ func (ar *Repository) Create(db shared.SQLExecutor, request *ResetPassword) erro
 		request.GetUpdatedAt(),
 		request.AccountUUID,
 		request.Token,
+		request.Processed,
 		request.ExpiredAt)
 
 	return errInsert
@@ -44,7 +54,7 @@ func (ar *Repository) Update(db shared.SQLExecutor, request *ResetPassword) erro
 
 func (ar *Repository) Find(account *account.Account) (*ResetPassword, error) {
 	row := ar.findByAccountStmt.QueryRow(account.Email)
-	resetPasswordRequest := NewResetPassword()
+	resetPasswordRequest := New()
 	err := row.Scan(
 		&resetPasswordRequest.UUID,
 		&resetPasswordRequest.RandId,

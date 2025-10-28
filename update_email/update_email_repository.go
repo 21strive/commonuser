@@ -14,8 +14,20 @@ type Repository struct {
 
 func (em *Repository) CreateRequest(db shared.SQLExecutor, request *UpdateEmail) error {
 	tableName := em.app.EntityName + "_update_email"
-
-	query := `INSERT INTO ` + tableName + ` (uuid, randId, created_at, updated_at, account_uuid, previous_email_address, new_email_address, update_token, expired_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	query := `INSERT INTO ` + tableName + ` 
+		(
+			uuid, 
+			randId, 
+			created_at, 
+			updated_at, 
+			account_uuid, 
+			previous_email_address, 
+			new_email_address, 
+			reset_token,
+			processed, 
+			revoked,
+			expired_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	_, errInsert := db.Exec(
 		query,
 		request.GetUUID(),
@@ -26,6 +38,8 @@ func (em *Repository) CreateRequest(db shared.SQLExecutor, request *UpdateEmail)
 		request.PreviousEmailAddress,
 		request.NewEmailAddress,
 		request.Token,
+		request.Processed,
+		request.Revoked,
 		request.ExpiredAt)
 
 	return errInsert
@@ -47,7 +61,7 @@ func (em *Repository) UpdateRequest(db shared.SQLExecutor, request *UpdateEmail)
 
 func (em *Repository) FindRequest(account *account.Account) (*UpdateEmail, error) {
 	row := em.findByAccountStmt.QueryRow(account.GetUUID())
-	updateEmailRequest := NewUpdateEmailRequestSQL()
+	updateEmailRequest := New()
 	err := row.Scan(
 		&updateEmailRequest.UUID,
 		&updateEmailRequest.RandId,

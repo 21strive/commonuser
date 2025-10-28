@@ -67,7 +67,7 @@ func (ue *UpdateEmail) IsExpired() bool {
 	return time.Now().UTC().After(ue.ExpiredAt)
 }
 
-func NewUpdateEmailRequestSQL() *UpdateEmail {
+func New() *UpdateEmail {
 	ue := &UpdateEmail{}
 	redifu.InitRecord(ue)
 	ue.Processed = false

@@ -22,9 +22,9 @@ func (af *Fetchers) FetchByUsername(username string) (*account.Account, bool, er
 				return nil, false, errGet
 			}
 			if isBlank {
-				return nil, false, account.AccountNotFound
+				return nil, false, account.NotFound
 			}
-			return nil, true, account.AccountNotFound
+			return nil, true, account.NotFound
 		}
 	}
 
@@ -45,9 +45,9 @@ func (af *Fetchers) FetchByRandId(randId string) (*account.Account, bool, error)
 			return nil, false, errGet
 		}
 		if isBlank {
-			return nil, false, account.AccountNotFound
+			return nil, false, account.NotFound
 		}
-		return nil, true, account.AccountNotFound
+		return nil, true, account.NotFound
 	}
 
 	af.AccountFetcher.DelBlank(accountFromDB.GetRandId())

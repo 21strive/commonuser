@@ -122,12 +122,14 @@ func contains(slice []string, item string) bool {
 func CreateResetPasswordTableSQL(db *sql.DB, entityName string) error {
 	tableName := entityName + "_reset_password"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
-       uuid VARCHAR(255) PRIMARY KEY,
-       email VARCHAR(255) UNIQUE NOT NULL,
-       account_uuid VARCHAR(255) NOT NULL,
-       created_at TIMESTAMP DEFAULT NOW(),
-       updated_at TIMESTAMP DEFAULT NOW(),
-       token VARCHAR(255) UNIQUE NOT NULL
+		uuid VARCHAR(255) PRIMARY KEY,
+		randid VARCHAR(255) UNIQUE,
+		created_at TIMESTAMP DEFAULT NOW(),
+		updated_at TIMESTAMP DEFAULT NOW(),
+		account_uuid VARCHAR(255) NOT NULL,
+		token VARCHAR(255) UNIQUE NOT NULL,
+		processed BOOLEAN DEFAULT FALSE,
+		expired_at TIMESTAMP,
     );
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_email ON ` + tableName + `(email);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_token ON ` + tableName + `(token);`
@@ -146,8 +148,7 @@ func CreateAccountTableSQL(db *sql.DB, entityName string) error {
        username VARCHAR(255) UNIQUE,
        password VARCHAR(255) NOT NULL,
        email VARCHAR(255) UNIQUE NOT NULL,
-       avatar VARCHAR(255),
-       suspended BOOLEAN DEFAULT FALSE
+       avatar VARCHAR(255)
     );
     CREATE INDEX IF NOT EXISTS idx_` + entityName + `_email ON ` + entityName + `(email);
 	CREATE INDEX IF NOT EXISTS idx_` + entityName + `_randid ON ` + entityName + `(randid);
@@ -161,14 +162,17 @@ func CreateAccountTableSQL(db *sql.DB, entityName string) error {
 func CreateUpdateEmailTableSQL(db *sql.DB, entityName string) error {
 	tableName := entityName + "_update_email"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
-       uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-       randid VARCHAR(255) UNIQUE,
-       created_at TIMESTAMP DEFAULT NOW(),
-       updated_at TIMESTAMP DEFAULT NOW(),
-       account_uuid UUID NOT NULL,
-       previous_email_address VARCHAR(255),
-       new_email_address VARCHAR(255) UNIQUE NOT NULL,
-       reset_token VARCHAR(255) NOT NULL
+		uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		randid VARCHAR(255) UNIQUE,
+		created_at TIMESTAMP DEFAULT NOW(),
+		updated_at TIMESTAMP DEFAULT NOW(),
+		account_uuid UUID NOT NULL,
+		previous_email_address VARCHAR(255),
+		new_email_address VARCHAR(255) UNIQUE NOT NULL,
+		reset_token VARCHAR(255) NOT NULL,
+		processed BOOLEAN DEFAULT FALSE,
+		revoked BOOLEAN DEFAULT FALSE, 
+		expired_at TIMESTAMP,
     );
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_new_email_address ON ` + tableName + `(new_email_address);`

@@ -21,7 +21,7 @@ type Repository struct {
 	findByRandIdStmt    *sql.Stmt
 	findByEmailStmt     *sql.Stmt
 	findByUUIDStmt      *sql.Stmt
-	entityName          string
+	app                 *config.App
 }
 
 func (asql *Repository) GetBase() *redifu.Base[*Account] {
@@ -36,8 +36,29 @@ func (asql *Repository) Close() {
 }
 
 func (asql *Repository) Create(db shared.SQLExecutor, account *Account) error {
-	query := "INSERT INTO " + asql.entityName + " (uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
-	_, errInsert := db.Exec(query, account.GetUUID(), account.GetRandId(), account.GetCreatedAt(), account.GetUpdatedAt(), account.Name, account.Username, account.Password, account.Email, account.Avatar, account.Suspended)
+	query := "INSERT INTO " + asql.app.EntityName + ` (
+		uuid, 
+		randid, 
+		created_at, 
+		updated_at, 
+		name, 
+		username, 
+		password, 
+		email, 	
+		avatar,
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	_, errInsert := db.Exec(
+		query,
+		account.GetUUID(),
+		account.GetRandId(),
+		account.GetCreatedAt(),
+		account.GetUpdatedAt(),
+		account.Name,
+		account.Username,
+		account.Password,
+		account.Email,
+		account.Avatar,
+	)
 
 	if errInsert != nil {
 		return errInsert
@@ -48,7 +69,7 @@ func (asql *Repository) Create(db shared.SQLExecutor, account *Account) error {
 		return errSetAcc
 	}
 
-	accountReference := NewAccountReference()
+	accountReference := NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
 	errSetReference := asql.baseReference.Set(accountReference, account.Username)
 	if errSetReference != nil {
@@ -62,7 +83,7 @@ func (asql *Repository) Create(db shared.SQLExecutor, account *Account) error {
 }
 
 func (asql *Repository) Update(db shared.SQLExecutor, account *Account) error {
-	query := "UPDATE " + asql.entityName +
+	query := "UPDATE " + asql.app.EntityName +
 		" SET updated_at = $1, name = $2, username = $3, email = $4, avatar = $5, email_verified = $6, WHERE uuid = $7"
 	_, errUpdate := db.Exec(
 		query,
@@ -96,7 +117,7 @@ func (asql *Repository) UpdateReference(account *Account, oldUsername string, ne
 		return err
 	}
 
-	accountReference := NewAccountReference()
+	accountReference := NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
 	errSet := asql.baseReference.Set(accountReference, newUsername)
 	if errSet != nil {
@@ -107,7 +128,7 @@ func (asql *Repository) UpdateReference(account *Account, oldUsername string, ne
 }
 
 func (asql *Repository) Delete(db shared.SQLExecutor, account *Account) error {
-	query := "DELETE FROM " + asql.entityName + " WHERE uuid = $1"
+	query := "DELETE FROM " + asql.app.EntityName + " WHERE uuid = $1"
 	_, errDelete := db.Exec(query, account.GetUUID())
 	if errDelete != nil {
 		return errDelete
@@ -139,12 +160,12 @@ func (asql *Repository) Delete(db shared.SQLExecutor, account *Account) error {
 }
 
 func (asql *Repository) SeedAllAccount() error {
-	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.entityName
+	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.app.EntityName
 	return asql.sortedAccountSeeder.Seed(query, accountRowsScanner, nil, nil)
 }
 
 func accountRowsScanner(rows *sql.Rows) (*Account, error) {
-	account := NewAccount()
+	account := New()
 	err := rows.Scan(
 		&account.UUID,
 		&account.RandId,
@@ -155,7 +176,6 @@ func accountRowsScanner(rows *sql.Rows) (*Account, error) {
 		&account.Base.Password,
 		&account.Base.Email,
 		&account.Base.Avatar,
-		&account.Base.Suspended,
 	)
 	return account, err
 }
@@ -175,7 +195,7 @@ func (asql *Repository) SeedByUsername(username string) error {
 			return errSetBlank
 		}
 
-		return AccountNotFound
+		return NotFound
 	}
 
 	errSetAcc := asql.base.Set(account)
@@ -183,7 +203,7 @@ func (asql *Repository) SeedByUsername(username string) error {
 		return errSetAcc
 	}
 
-	accountReference := NewAccountReference()
+	accountReference := NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
 	errSetReference := asql.baseReference.Set(accountReference, account.Username)
 	if errSetReference != nil {
@@ -203,7 +223,7 @@ func (asql *Repository) FindByRandId(randId string) (*Account, error) {
 func (asql *Repository) SeedByRandId(randId string) error {
 	account, err := asql.FindByRandId(randId)
 	if err != nil {
-		if errors.Is(err, AccountNotFound) {
+		if errors.Is(err, NotFound) {
 			errSetBlank := asql.baseReference.SetBlank(randId)
 			if errSetBlank != nil {
 				return errSetBlank
@@ -217,7 +237,7 @@ func (asql *Repository) SeedByRandId(randId string) error {
 		return errSetAcc
 	}
 
-	accountReference := NewAccountReference()
+	accountReference := NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
 	errSetReference := asql.baseReference.Set(accountReference, account.Username)
 	if errSetReference != nil {
@@ -242,7 +262,7 @@ func (asql *Repository) SeedByEmail(email string) error {
 		return errSetAcc
 	}
 
-	accountReference := NewAccountReference()
+	accountReference := NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
 	errSetReference := asql.baseReference.Set(accountReference, account.Username)
 	if errSetReference != nil {
@@ -267,7 +287,7 @@ func (asql *Repository) SeedByUUID(uuid string) error {
 		return errSetAcc
 	}
 
-	accountReference := NewAccountReference()
+	accountReference := NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
 	errSetReference := asql.baseReference.Set(accountReference, account.Username)
 	if errSetReference != nil {
@@ -278,7 +298,7 @@ func (asql *Repository) SeedByUUID(uuid string) error {
 }
 
 func AccountRowScanner(row *sql.Row) (*Account, error) {
-	account := NewAccount()
+	account := New()
 	err := row.Scan(
 		&account.UUID,
 		&account.RandId,
@@ -289,12 +309,11 @@ func AccountRowScanner(row *sql.Row) (*Account, error) {
 		&account.Base.Password,
 		&account.Base.Email,
 		&account.Base.Avatar,
-		&account.Base.Suspended,
 	)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, AccountNotFound
+			return nil, NotFound
 		}
 		return nil, err
 	}
@@ -310,25 +329,25 @@ func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App)
 
 	var errPrepare error
 	findByUsernameStmt, errPrepare := readDB.Prepare(
-		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " +
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar FROM " +
 			app.EntityName + " WHERE username = $1")
 	if errPrepare != nil {
 		panic(errPrepare)
 	}
 	findByRandId, errPrepare := readDB.Prepare(
-		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " +
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar FROM " +
 			app.EntityName + " WHERE randId = $1")
 	if errPrepare != nil {
 		panic(errPrepare)
 	}
 	findByEmailStmt, errPrepare := readDB.Prepare("" +
-		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " +
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar FROM " +
 		app.EntityName + " WHERE email = $1")
 	if errPrepare != nil {
 		panic(errPrepare)
 	}
 	findByUUIDStmt, errPrepare := readDB.Prepare(
-		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " +
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar FROM " +
 			app.EntityName + " WHERE uuid = $1")
 	if errPrepare != nil {
 		panic(errPrepare)
@@ -337,7 +356,6 @@ func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App)
 	return &Repository{
 		base:                base,
 		baseReference:       baseReference,
-		entityName:          app.EntityName,
 		sortedAccount:       sortedAccount,
 		sortedAccountSeeder: sortedAccountSeeder,
 		redis:               redis,
@@ -345,5 +363,6 @@ func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App)
 		findByRandIdStmt:    findByRandId,
 		findByEmailStmt:     findByEmailStmt,
 		findByUUIDStmt:      findByUUIDStmt,
+		app:                 app,
 	}
 }

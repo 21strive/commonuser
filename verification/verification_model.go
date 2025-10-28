@@ -12,8 +12,8 @@ import (
 
 type Verification struct {
 	*redifu.Record
-	AccountUUID      string `db:"accountuuid"`
-	VerificationHash string `db:"verification_hash"`
+	AccountUUID string `db:"accountuuid"`
+	Code        string `db:"code"`
 }
 
 func (v *Verification) SetAccount(account *account.Account) {
@@ -28,17 +28,17 @@ func (v *Verification) SetCode() string {
 	}
 
 	hash := sha256.Sum256([]byte(numericString))
-	v.VerificationHash = hex.EncodeToString(hash[:])
+	v.Code = hex.EncodeToString(hash[:])
 
 	return numericString
 }
 
-func (v *Verification) Validate(verification string) bool {
-	hash := sha256.Sum256([]byte(verification))
-	return hex.EncodeToString(hash[:]) == v.VerificationHash
+func (v *Verification) Validate(code string) bool {
+	hash := sha256.Sum256([]byte(code))
+	return hex.EncodeToString(hash[:]) == v.Code
 }
 
-func NewVerification() *Verification {
+func New() *Verification {
 	verification := &Verification{}
 	redifu.InitRecord(verification)
 	return verification

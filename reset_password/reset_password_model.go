@@ -47,7 +47,7 @@ func (rpsql *ResetPassword) Validate(token string) error {
 	return nil
 }
 
-func NewResetPassword() *ResetPassword {
+func New() *ResetPassword {
 	request := &ResetPassword{}
 	redifu.InitRecord(request)
 	request.ExpiredAt = time.Now().Add(time.Hour * 48)

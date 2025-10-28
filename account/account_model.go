@@ -35,7 +35,6 @@ type Base struct {
 	Avatar            string              `json:"avatar,omitempty" db:"avatar"`
 	EmailVerified     bool                `json:"email_verified,omitempty"`
 	AssociatedAccount []AssociatedAccount `json:"associatedAccount,omitempty" db:"-"`
-	Suspended         bool                `json:"suspended,omitempty" db:"suspended"`
 }
 
 func (b *Base) SetName(name string) {
@@ -85,18 +84,6 @@ func (b *Base) SetAssociatedAccount(associatedAccount AssociatedAccount) {
 	b.AssociatedAccount = append(b.AssociatedAccount, associatedAccount)
 }
 
-func (b *Base) Suspend() {
-	b.Suspended = true
-}
-
-func (b *Base) Release() {
-	b.Suspended = false
-}
-
-func (b *Base) IsSuspended() bool {
-	return b.Suspended
-}
-
 func (b *Base) IsPasswordExist() bool {
 	return b.Password != ""
 }
@@ -138,7 +125,7 @@ func (asql *Account) GenerateAccessToken(jwtSecret string, jwtTokenIssuer string
 	return tokenString, nil
 }
 
-func NewAccount() *Account {
+func New() *Account {
 	account := &Account{
 		Base: Base{},
 	}
@@ -156,7 +143,7 @@ func (ar *AccountReference) SetAccountRandId(accountRandId string) {
 	ar.AccountRandId = accountRandId
 }
 
-func NewAccountReference() *AccountReference {
+func NewReference() *AccountReference {
 	accountReference := &AccountReference{}
 	redifu.InitRecord(accountReference)
 	return accountReference

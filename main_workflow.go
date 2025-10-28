@@ -164,7 +164,7 @@ func (aw *Service) Register(
 	db shared.SQLExecutor,
 	newAccount *account.Account,
 	requireVerification bool,
-) (*account.Account, *verification.Verification, error) {
+) (*verification.Verification, error) {
 	if !requireVerification {
 		newAccount.SetEmailVerified()
 	}
@@ -173,19 +173,19 @@ func (aw *Service) Register(
 
 	var newVerification *verification.Verification
 	if requireVerification {
-		newVerification = verification.NewVerification()
+		newVerification = verification.New()
 		newVerification.SetAccount(newAccount)
 		newVerification.SetCode()
 		errCreateVerification := aw.verificationRepository.Create(db, newVerification)
 		if errCreateVerification != nil {
-			return nil, nil, errCreateVerification
+			return nil, errCreateVerification
 		}
 	}
 	if errCreateAcc != nil {
-		return nil, nil, errCreateAcc
+		return nil, errCreateAcc
 	}
 
-	return newAccount, newVerification, nil
+	return newVerification, nil
 }
 
 type UpdateOpt struct {
@@ -223,29 +223,61 @@ type Verification struct {
 	s *Service
 }
 
-func (v *Verification) Request(db shared.SQLExecutor, accountUUID string, code string) error {
+func (v *Verification) Request(db shared.SQLExecutor, accountUUID string) (*verification.Verification, error) {
 	accountFromDB, errFind := v.s.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
-		return errFind
+		return nil, errFind
 	}
 
 	verificationFromDB, errFind := v.s.verificationRepository.FindByAccount(accountFromDB)
 	if errFind != nil {
-		return errFind
+		if errors.Is(errFind, verification.VerificationNotFound) {
+			return nil, errFind
+		}
+	}
+	if verificationFromDB != nil {
+		return verificationFromDB, nil
+	}
+
+	verificationData := verification.New()
+	verificationData.SetAccount(accountFromDB)
+	verificationData.SetCode()
+	errCreateVerification := v.s.verificationRepository.Create(db, verificationData)
+	if errCreateVerification != nil {
+		return nil, errCreateVerification
+	}
+
+	return verificationData, nil
+}
+
+func (v *Verification) Verify(db shared.SQLExecutor, accountUUID string, code string) (bool, error) {
+	accountFromDB, errFind := v.s.accountRepository.FindByUUID(accountUUID)
+	if errFind != nil {
+		return false, errFind
+	}
+
+	verificationFromDB, errFind := v.s.verificationRepository.FindByAccount(accountFromDB)
+	if errFind != nil {
+		return false, errFind
 	}
 
 	isValid := verificationFromDB.Validate(code)
 	if !isValid {
-		return verification.InvalidVerificationCode
+		return false, verification.InvalidVerificationCode
 	}
 
 	accountFromDB.SetEmailVerified()
 	errUpdate := v.s.accountRepository.Update(db, accountFromDB)
 	if errUpdate != nil {
-		return errUpdate
+		return false, errUpdate
 	}
 
-	return v.s.verificationRepository.Delete(db, verificationFromDB)
+	errDeleteVerification := v.s.verificationRepository.Delete(db, verificationFromDB)
+	if errDeleteVerification != nil {
+		return false, errDeleteVerification
+	}
+
+	return true, nil
 }
 
 func (v *Verification) Resend(db shared.SQLExecutor, accountUUID string) (*verification.Verification, error) {
@@ -258,7 +290,7 @@ func (v *Verification) Resend(db shared.SQLExecutor, accountUUID string) (*verif
 	verificationData, errFind = v.s.verificationRepository.FindByAccount(accountFromDB)
 	if errFind != nil {
 		if errFind == verification.VerificationNotFound {
-			verificationData = verification.NewVerification()
+			verificationData = verification.New()
 			verificationData.SetAccount(accountFromDB)
 			verificationData.SetCode()
 			errCreateVerification := v.s.verificationRepository.Create(db, verificationData)
@@ -364,7 +396,7 @@ func (eu *Email) RequestUpdate(
 		}
 	}
 
-	updateEmailRequest := update_email.NewUpdateEmailRequestSQL()
+	updateEmailRequest := update_email.New()
 	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
 	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
 	updateEmailRequest.SetToken()
@@ -478,7 +510,7 @@ func (pu *Password) RequestReset(db shared.SQLExecutor, account *account.Account
 		}
 	}
 
-	newResetPasswordTicket := reset_password.NewResetPassword()
+	newResetPasswordTicket := reset_password.New()
 	newResetPasswordTicket.SetAccount(account)
 	newResetPasswordTicket.SetToken()
 	if expiration != nil {
@@ -554,6 +586,10 @@ func (pu *Password) Update(db shared.SQLExecutor, account *account.Account, oldP
 
 	accountFromDB.SetPassword(newPassword)
 	return pu.s.accountRepository.Update(db, accountFromDB)
+}
+
+func (aw *Service) Password() *Password {
+	return &Password{s: aw}
 }
 
 func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Service {
