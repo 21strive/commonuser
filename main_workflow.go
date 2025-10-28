@@ -5,8 +5,10 @@ import (
 	"errors"
 	"github.com/21strive/commonuser/account"
 	"github.com/21strive/commonuser/config"
+	"github.com/21strive/commonuser/reset_password"
 	"github.com/21strive/commonuser/session"
 	"github.com/21strive/commonuser/shared"
+	"github.com/21strive/commonuser/update_email"
 	"github.com/21strive/commonuser/verification"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
@@ -20,6 +22,7 @@ type Service struct {
 	accountRepository      *account.Repository
 	sessionRepository      *session.Repository
 	verificationRepository *verification.Repository
+	updateEmailRepository  *update_email.Repository
 	config                 *config.App
 }
 
@@ -215,13 +218,17 @@ func (aw *Service) Update(db shared.SQLExecutor, accountUUID string, opt UpdateO
 	return aw.accountRepository.UpdateReference(accountFromDB, oldUsername, accountFromDB.Username)
 }
 
-func (aw *Service) Verify(db shared.SQLExecutor, accountUUID string, code string) error {
-	accountFromDB, errFind := aw.accountRepository.FindByUUID(accountUUID)
+type Verification struct {
+	s *Service
+}
+
+func (v *Verification) Request(db shared.SQLExecutor, accountUUID string, code string) error {
+	accountFromDB, errFind := v.s.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return errFind
 	}
 
-	verificationFromDB, errFind := aw.verificationRepository.FindByAccount(accountFromDB)
+	verificationFromDB, errFind := v.s.verificationRepository.FindByAccount(accountFromDB)
 	if errFind != nil {
 		return errFind
 	}
@@ -232,28 +239,28 @@ func (aw *Service) Verify(db shared.SQLExecutor, accountUUID string, code string
 	}
 
 	accountFromDB.SetEmailVerified()
-	errUpdate := aw.accountRepository.Update(db, accountFromDB)
+	errUpdate := v.s.accountRepository.Update(db, accountFromDB)
 	if errUpdate != nil {
 		return errUpdate
 	}
 
-	return aw.verificationRepository.Delete(db, verificationFromDB)
+	return v.s.verificationRepository.Delete(db, verificationFromDB)
 }
 
-func (aw *Service) ResendVerification(db shared.SQLExecutor, accountUUID string) (*verification.Verification, error) {
-	accountFromDB, errFind := aw.accountRepository.FindByUUID(accountUUID)
+func (v *Verification) Resend(db shared.SQLExecutor, accountUUID string) (*verification.Verification, error) {
+	accountFromDB, errFind := v.s.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return nil, errFind
 	}
 
 	var verificationData *verification.Verification
-	verificationData, errFind = aw.verificationRepository.FindByAccount(accountFromDB)
+	verificationData, errFind = v.s.verificationRepository.FindByAccount(accountFromDB)
 	if errFind != nil {
 		if errFind == verification.VerificationNotFound {
 			verificationData = verification.NewVerification()
 			verificationData.SetAccount(accountFromDB)
 			verificationData.SetCode()
-			errCreateVerification := aw.verificationRepository.Create(db, verificationData)
+			errCreateVerification := v.s.verificationRepository.Create(db, verificationData)
 			if errCreateVerification != nil {
 				return nil, errCreateVerification
 			}
@@ -263,12 +270,16 @@ func (aw *Service) ResendVerification(db shared.SQLExecutor, accountUUID string)
 	}
 
 	verificationData.SetCode()
-	errUpdate := aw.verificationRepository.Update(db, verificationData)
+	errUpdate := v.s.verificationRepository.Update(db, verificationData)
 	if errUpdate != nil {
 		return nil, errUpdate
 	}
 
 	return verificationData, nil
+}
+
+func (aw *Service) Verification() *Verification {
+	return &Verification{s: aw}
 }
 
 func (aw *Service) Delete(db shared.SQLExecutor, account *account.Account) error {
@@ -332,15 +343,85 @@ type EmailUpdate struct {
 	s *Service
 }
 
-func (eu *EmailUpdate) Request() {}
+func (eu *EmailUpdate) Request(db shared.SQLExecutor, account *account.Account, newEmailAddress string) (*update_email.UpdateEmail, error) {
+	requestFromDB, errFind := eu.s.updateEmailRepository.FindRequest(account)
+	if errFind != nil {
+		return nil, errFind
+	}
 
-func (eu *EmailUpdate) Validate() {}
+	if requestFromDB != nil {
+		return requestFromDB, nil
+	}
 
-func (eu *EmailUpdate) Revoke() {}
+	updateEmailTicket, errCreateTicket := eu.s.updateEmailRepository.CreateRequest(db, account, newEmailAddress)
+	if errCreateTicket != nil {
+		return nil, errCreateTicket
+	}
+
+	return updateEmailTicket, nil
+}
+
+func (eu *EmailUpdate) Validate(db shared.SQLExecutor, account *account.Account, token string) error {
+	request, errFind := eu.s.updateEmailRepository.FindRequest(account)
+	if errFind != nil {
+		return errFind
+	}
+
+	errValidate := request.Validate(token, false)
+	if errValidate != nil {
+		if errors.Is(errValidate, shared.RequestExpired) {
+			eu.s.updateEmailRepository.DeleteRequest(db, request)
+			return shared.RequestExpired
+		}
+		return errValidate
+	}
+
+	account.SetEmail(request.NewEmailAddress)
+	errUpdate := eu.s.accountRepository.Update(db, account)
+	if errUpdate != nil {
+		return errUpdate
+	}
+
+	return nil
+}
+
+func (eu *EmailUpdate) Revoke(db shared.SQLExecutor, account *account.Account, token string) error {
+	request, errFind := eu.s.updateEmailRepository.FindRequest(account)
+	if errFind != nil {
+		return errFind
+	}
+
+	errValidate := request.Validate(token, true)
+	if errValidate != nil {
+		return errValidate
+	}
+
+	account.SetEmail(request.PreviousEmailAddress)
+	errUpdate := eu.s.accountRepository.Update(db, account)
+	if errUpdate != nil {
+		return errUpdate
+	}
+
+	return nil
+}
 
 func (aw *Service) EmailUpdate() *EmailUpdate {
 	return &EmailUpdate{s: aw}
 }
+
+type PasswordUpdate struct {
+	s *Service
+}
+
+func (pu *PasswordUpdate) Request(db shared.SQLExecutor, account *account.Account) (*reset_password.ResetPassword, error) {
+
+}
+
+func (pu *PasswordUpdate) Validate() (*reset_password.ResetPassword, error) {
+	return nil, nil
+}
+
+func (pu *PasswordUpdate) Revoke() {}
 
 func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Service {
 	accountManager := account.NewRepository(readDB, redisClient, app)

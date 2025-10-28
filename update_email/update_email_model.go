@@ -13,7 +13,7 @@ type UpdateEmail struct {
 	AccountUUID          string    `db:"account_uuid"`
 	PreviousEmailAddress string    `db:"previous_email_address"`
 	NewEmailAddress      string    `db:"new_email_address"`
-	UpdateToken          string    `db:"update_token"`
+	Token                string    `db:"token"`
 	ExpiredAt            time.Time `db:"expired_at"`
 }
 
@@ -29,22 +29,24 @@ func (ue *UpdateEmail) SetNewEmailAddress(email string) {
 	ue.NewEmailAddress = email
 }
 
-func (ue *UpdateEmail) SetResetToken() {
+func (ue *UpdateEmail) SetToken() {
 	token := item.RandId()
-	ue.UpdateToken = token
+	ue.Token = token
 }
 
 func (ue *UpdateEmail) SetExpiration() {
 	ue.ExpiredAt = time.Now().Add(time.Hour * 48)
 }
 
-func (ue *UpdateEmail) Validate(updateToken string) error {
-	time := time.Now().UTC()
-	if time.After(ue.ExpiredAt) {
-		return shared.RequestExpired
+func (ue *UpdateEmail) Validate(token string, bypassExpiration bool) error {
+	if !bypassExpiration {
+		time := time.Now().UTC()
+		if time.After(ue.ExpiredAt) {
+			return shared.RequestExpired
+		}
 	}
 
-	if ue.UpdateToken != updateToken {
+	if ue.Token != token {
 		return shared.InvalidToken
 	}
 	return nil
