@@ -68,6 +68,7 @@ func VerificationRowScanner(row *sql.Row) (*Verification, error) {
 	verification := New()
 	err := row.Scan(
 		&verification.UUID,
+		&verification.RandId,
 		&verification.CreatedAt,
 		&verification.UpdatedAt,
 		&verification.AccountUUID,

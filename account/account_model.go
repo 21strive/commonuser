@@ -30,10 +30,9 @@ type Base struct {
 	Name              string              `json:"name,omitempty" db:"name"`
 	Username          string              `json:"username,omitempty" db:"username"`
 	Password          string              `json:"-" db:"password"`
-	PasswordUpdatedAt time.Time           `json:"-" db:"passwordupdatedat"`
 	Email             string              `json:"email,omitempty" db:"email"`
 	Avatar            string              `json:"avatar,omitempty" db:"avatar"`
-	EmailVerified     bool                `json:"email_verified,omitempty"`
+	EmailVerified     bool                `json:"email_verified,omitempty" db:"email_verified"`
 	AssociatedAccount []AssociatedAccount `json:"associatedAccount,omitempty" db:"-"`
 }
 
@@ -53,7 +52,6 @@ func (b *Base) SetPassword(password string) error {
 	}
 
 	b.Password = string(encoded)
-	b.PasswordUpdatedAt = time.Now().UTC()
 	return nil
 }
 

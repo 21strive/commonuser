@@ -35,24 +35,27 @@ func (aw *Service) SessionBase() *redifu.Base[*session.Session] {
 	return aw.sessionRepository.GetBase()
 }
 
+func (aw *Service) Config() *config.App {
+	return aw.config
+}
+
 type DeviceInfo struct {
-	DeviceId   string
-	DeviceType string
-	UserAgent  string
+	DeviceId   string `json:"deviceId"`
+	DeviceType string `json:"deviceType"`
+	UserAgent  string `json:"userAgent"`
 }
 
-func (aw *Service) AuthenticateByUsername(
-	db shared.SQLExecutor,
-	username string,
-	password string,
-	deviceInfo DeviceInfo,
-) (string, string, error) {
-	accountFromDB, errFindUser := aw.accountRepository.FindByUsername(username)
+type Authenticate struct {
+	s *Service
+}
+
+func (au *Authenticate) ByUsername(db shared.SQLExecutor, username string, password string, deviceInfo DeviceInfo) (string, string, error) {
+	accountFromDB, errFindUser := au.s.accountRepository.FindByUsername(username)
 	if errFindUser != nil {
 		return "", "", errFindUser
 	}
 
-	return aw.Authenticate(
+	return au.Authenticate(
 		db,
 		accountFromDB,
 		password,
@@ -62,17 +65,13 @@ func (aw *Service) AuthenticateByUsername(
 	)
 }
 
-func (aw *Service) AuthenticateByEmail(
-	db shared.SQLExecutor,
-	email string,
-	password string,
-	deviceInfo DeviceInfo) (string, string, error) {
-	accountFromDB, errFindUser := aw.accountRepository.FindByEmail(email)
+func (au *Authenticate) ByEmail(db shared.SQLExecutor, email string, password string, deviceInfo DeviceInfo) (string, string, error) {
+	accountFromDB, errFindUser := au.s.accountRepository.FindByEmail(email)
 	if errFindUser != nil {
 		return "", "", errFindUser
 	}
 
-	return aw.Authenticate(
+	return au.Authenticate(
 		db,
 		accountFromDB,
 		password,
@@ -82,13 +81,7 @@ func (aw *Service) AuthenticateByEmail(
 	)
 }
 
-func (aw *Service) Authenticate(
-	db shared.SQLExecutor,
-	accountFromDB *account.Account,
-	password string,
-	deviceId string,
-	deviceInfo string,
-	userAgent string) (string, string, error) {
+func (au *Authenticate) Authenticate(db shared.SQLExecutor, accountFromDB *account.Account, password string, deviceId string, deviceType string, userAgent string) (string, string, error) {
 
 	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(password)
 	if errVerifyPassword != nil {
@@ -101,22 +94,22 @@ func (aw *Service) Authenticate(
 	session := session.NewSession()
 
 	session.SetDeviceId(deviceId)
-	session.SetDeviceInfo(deviceInfo)
+	session.SetDeviceType(deviceType)
 	session.SetUserAgent(userAgent)
 	session.SetAccountUUID(accountFromDB.GetUUID())
 	session.SetLastActiveAt(time.Now().UTC())
-	session.SetLifeSpan(aw.config.TokenLifespan)
+	session.SetLifeSpan(au.s.config.TokenLifespan)
 	session.GenerateRefreshToken()
 
-	err := aw.sessionRepository.Create(db, session)
+	err := au.s.sessionRepository.Create(db, session)
 	if err != nil {
 		return "", "", err
 	}
 
 	accessToken, errGenerateAccToken := accountFromDB.GenerateAccessToken(
-		aw.config.JWTSecret,
-		aw.config.JWTIssuer,
-		aw.config.JWTLifespan,
+		au.s.config.JWTSecret,
+		au.s.config.JWTIssuer,
+		au.s.config.JWTLifespan,
 		session.GetRandId())
 	if errGenerateAccToken != nil {
 		return "", "", errGenerateAccToken
@@ -125,11 +118,11 @@ func (aw *Service) Authenticate(
 	return accessToken, session.RefreshToken, nil
 }
 
-func (aw *Service) RefreshToken(
-	db shared.SQLExecutor,
-	account *account.Account,
-	refreshToken string,
-) (*string, *string, error) {
+func (aw *Service) Authenticate() *Authenticate {
+	return &Authenticate{s: aw}
+}
+
+func (aw *Service) RefreshToken(db shared.SQLExecutor, account *account.Account, refreshToken string) (*string, *string, error) {
 
 	session, errFind := aw.sessionRepository.FindByHash(refreshToken)
 	if errFind != nil {
@@ -160,32 +153,29 @@ func (aw *Service) RefreshToken(
 	return &newAccessToken, &session.RefreshToken, nil
 }
 
-func (aw *Service) Register(
-	db shared.SQLExecutor,
-	newAccount *account.Account,
-	requireVerification bool,
-) (*verification.Verification, error) {
+func (aw *Service) Register(db shared.SQLExecutor, newAccount *account.Account, requireVerification bool) (*string, error) {
 	if !requireVerification {
 		newAccount.SetEmailVerified()
 	}
 
 	errCreateAcc := aw.accountRepository.Create(db, newAccount)
+	if errCreateAcc != nil {
+		return nil, errCreateAcc
+	}
 
+	var verificationCode string
 	var newVerification *verification.Verification
 	if requireVerification {
 		newVerification = verification.New()
 		newVerification.SetAccount(newAccount)
-		newVerification.SetCode()
+		verificationCode = newVerification.SetCode()
 		errCreateVerification := aw.verificationRepository.Create(db, newVerification)
 		if errCreateVerification != nil {
 			return nil, errCreateVerification
 		}
 	}
-	if errCreateAcc != nil {
-		return nil, errCreateAcc
-	}
 
-	return newVerification, nil
+	return &verificationCode, nil
 }
 
 type UpdateOpt struct {
@@ -324,19 +314,26 @@ func (aw *Service) Delete(db shared.SQLExecutor, account *account.Account) error
 	return nil
 }
 
-func (aw *Service) PingSession(db shared.SQLExecutor, sessionRandId string) error {
-	session, errFind := aw.sessionRepository.FindByRandId(sessionRandId)
+type Session struct {
+	s *Service
+}
+
+func (s *Session) Create(db shared.SQLExecutor, session *session.Session) error {
+	return s.s.sessionRepository.Create(db, session)
+}
+
+func (s *Session) Ping(db shared.SQLExecutor, sessionRandId string) error {
+	session, errFind := s.s.sessionRepository.FindByRandId(sessionRandId)
 	if errFind != nil {
 		return errFind
 	}
 
 	session.SetLastActiveAt(time.Now().UTC())
-	errUpdateSess := aw.sessionRepository.Update(db, session)
-	if errUpdateSess != nil {
-		return errUpdateSess
-	}
+	return s.s.sessionRepository.Update(db, session)
+}
 
-	return nil
+func (aw *Service) Session() *Session {
+	return &Session{s: aw}
 }
 
 func (aw *Service) SeedAccount() error {

@@ -21,7 +21,7 @@ func (sm *Repository) GetBase() *redifu.Base[*Session] {
 
 func (sm *Repository) Create(db shared.SQLExecutor, session *Session) error {
 	tableName := sm.entityName + "_session"
-	query := `INSERT INTO ` + tableName + ` (uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	query := `INSERT INTO ` + tableName + ` (uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, user_agent, refresh_token, expires_at, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 	_, err := db.Exec(query,
 		session.GetUUID(),
 		session.GetRandId(),
@@ -30,7 +30,7 @@ func (sm *Repository) Create(db shared.SQLExecutor, session *Session) error {
 		session.LastActiveAt,
 		session.AccountUUID,
 		session.DeviceId,
-		session.DeviceInfo,
+		session.DeviceType,
 		session.UserAgent,
 		session.RefreshToken,
 		session.ExpiresAt,
@@ -92,7 +92,7 @@ func (sm *Repository) scanSession(scanner interface {
 		&session.LastActiveAt,
 		&session.AccountUUID,
 		&session.DeviceId,
-		&session.DeviceInfo,
+		&session.DeviceType,
 		&session.UserAgent,
 		&session.RefreshToken,
 		&session.ExpiresAt,

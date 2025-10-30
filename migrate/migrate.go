@@ -156,15 +156,16 @@ func CreateResetPasswordTableSQL(tx *sql.Tx, entityName string) error {
 
 func CreateAccountTableSQL(tx *sql.Tx, entityName string) error {
 	query := `CREATE TABLE IF NOT EXISTS ` + entityName + ` (
-       uuid VARCHAR(255) PRIMARY KEY,
-       randid VARCHAR(255) UNIQUE,
-       created_at TIMESTAMP DEFAULT NOW(),
-       updated_at TIMESTAMP DEFAULT NOW(),
-       name VARCHAR(255),
-       username VARCHAR(255) UNIQUE,
-       password VARCHAR(255) NOT NULL,
-       email VARCHAR(255) UNIQUE NOT NULL,
-       avatar VARCHAR(255)
+		uuid VARCHAR(255) PRIMARY KEY,
+		randid VARCHAR(255) UNIQUE,
+		created_at TIMESTAMP DEFAULT NOW(),
+		updated_at TIMESTAMP DEFAULT NOW(),
+		name VARCHAR(255),
+		username VARCHAR(255) UNIQUE,
+		password VARCHAR(255) NOT NULL,
+		email VARCHAR(255) UNIQUE NOT NULL,
+		avatar VARCHAR(255),
+		email_verified BOOLEAN DEFAULT FALSE
     );
     CREATE INDEX IF NOT EXISTS idx_` + entityName + `_email ON ` + entityName + `(email);
 	CREATE INDEX IF NOT EXISTS idx_` + entityName + `_randid ON ` + entityName + `(randid);
@@ -207,7 +208,7 @@ func CreateSessionTableSQL(tx *sql.Tx, entityName string) error {
        last_active_at TIMESTAMP DEFAULT NOW(),
        account_uuid VARCHAR(255) NOT NULL,
        device_id VARCHAR(255),
-       device_info TEXT,
+       device_type TEXT,
        user_agent TEXT,
        refresh_token VARCHAR(255) UNIQUE NOT NULL,
        expires_at TIMESTAMP NOT NULL,

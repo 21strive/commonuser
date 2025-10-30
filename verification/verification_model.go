@@ -35,7 +35,8 @@ func (v *Verification) SetCode() string {
 
 func (v *Verification) Validate(code string) bool {
 	hash := sha256.Sum256([]byte(code))
-	return hex.EncodeToString(hash[:]) == v.Code
+	stringifiedHash := hex.EncodeToString(hash[:])
+	return stringifiedHash == v.Code
 }
 
 func New() *Verification {

@@ -10,11 +10,11 @@ import (
 
 type Session struct {
 	*redifu.Record `bson:",inline" json:",inline"`
-	LastActiveAt   time.Time `json:"lastloginat"`
-	AccountUUID    string    `json:"accountuuid"`
-	DeviceId       string    `json:"deviceid"`
-	DeviceInfo     string    `json:"deviceinfo"`
-	UserAgent      string    `json:"useragent"`
+	LastActiveAt   time.Time `json:"lastActive"`
+	AccountUUID    string    `json:"accountUUID"`
+	DeviceId       string    `json:"deviceId"`
+	DeviceType     string    `json:"deviceType"`
+	UserAgent      string    `json:"userAgent"`
 	RefreshToken   string    `json:"refreshToken"`
 	ExpiresAt      time.Time `json:"expiresAt"`
 	IsActive       bool      `json:"revoked"`
@@ -33,8 +33,8 @@ func (s *Session) SetDeviceId(deviceId string) {
 	s.DeviceId = deviceId
 }
 
-func (s *Session) SetDeviceInfo(deviceInfo string) {
-	s.DeviceInfo = deviceInfo
+func (s *Session) SetDeviceType(deviceType string) {
+	s.DeviceType = deviceType
 }
 
 func (s *Session) SetUserAgent(userAgent string) {
