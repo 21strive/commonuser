@@ -37,7 +37,7 @@ func (aw *Service) SessionBase() *redifu.Base[*session.Session] {
 
 type DeviceInfo struct {
 	DeviceId   string
-	DeviceInfo string
+	DeviceType string
 	UserAgent  string
 }
 
@@ -46,10 +46,10 @@ func (aw *Service) AuthenticateByUsername(
 	username string,
 	password string,
 	deviceInfo DeviceInfo,
-) (*string, *string, error) {
+) (string, string, error) {
 	accountFromDB, errFindUser := aw.accountRepository.FindByUsername(username)
 	if errFindUser != nil {
-		return nil, nil, errFindUser
+		return "", "", errFindUser
 	}
 
 	return aw.Authenticate(
@@ -57,7 +57,7 @@ func (aw *Service) AuthenticateByUsername(
 		accountFromDB,
 		password,
 		deviceInfo.DeviceId,
-		deviceInfo.DeviceInfo,
+		deviceInfo.DeviceType,
 		deviceInfo.UserAgent,
 	)
 }
@@ -66,10 +66,10 @@ func (aw *Service) AuthenticateByEmail(
 	db shared.SQLExecutor,
 	email string,
 	password string,
-	deviceInfo DeviceInfo) (*string, *string, error) {
+	deviceInfo DeviceInfo) (string, string, error) {
 	accountFromDB, errFindUser := aw.accountRepository.FindByEmail(email)
 	if errFindUser != nil {
-		return nil, nil, errFindUser
+		return "", "", errFindUser
 	}
 
 	return aw.Authenticate(
@@ -77,7 +77,7 @@ func (aw *Service) AuthenticateByEmail(
 		accountFromDB,
 		password,
 		deviceInfo.DeviceId,
-		deviceInfo.DeviceInfo,
+		deviceInfo.DeviceType,
 		deviceInfo.UserAgent,
 	)
 }
@@ -88,14 +88,14 @@ func (aw *Service) Authenticate(
 	password string,
 	deviceId string,
 	deviceInfo string,
-	userAgent string) (*string, *string, error) {
+	userAgent string) (string, string, error) {
 
 	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(password)
 	if errVerifyPassword != nil {
-		return nil, nil, errVerifyPassword
+		return "", "", errVerifyPassword
 	}
 	if !isAuthenticated {
-		return nil, nil, shared.Unauthorized
+		return "", "", shared.Unauthorized
 	}
 
 	session := session.NewSession()
@@ -110,7 +110,7 @@ func (aw *Service) Authenticate(
 
 	err := aw.sessionRepository.Create(db, session)
 	if err != nil {
-		return nil, nil, err
+		return "", "", err
 	}
 
 	accessToken, errGenerateAccToken := accountFromDB.GenerateAccessToken(
@@ -119,10 +119,10 @@ func (aw *Service) Authenticate(
 		aw.config.JWTLifespan,
 		session.GetRandId())
 	if errGenerateAccToken != nil {
-		return nil, nil, errGenerateAccToken
+		return "", "", errGenerateAccToken
 	}
 
-	return &accessToken, &session.RefreshToken, nil
+	return accessToken, session.RefreshToken, nil
 }
 
 func (aw *Service) RefreshToken(
@@ -595,10 +595,16 @@ func (aw *Service) Password() *Password {
 func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Service {
 	accountManager := account.NewRepository(readDB, redisClient, app)
 	sessionManager := session.NewRepository(readDB, redisClient, app)
+	verificationManager := verification.NewRepository(readDB, app)
+	updateEmailManager := update_email.NewUpdateEmailManagerSQL(readDB, app)
+	resetPasswordManager := reset_password.NewRepository(readDB, app)
 
 	return &Service{
-		accountRepository: accountManager,
-		sessionRepository: sessionManager,
-		config:            app,
+		accountRepository:       accountManager,
+		sessionRepository:       sessionManager,
+		verificationRepository:  verificationManager,
+		updateEmailRepository:   updateEmailManager,
+		resetPasswordRepository: resetPasswordManager,
+		config:                  app,
 	}
 }

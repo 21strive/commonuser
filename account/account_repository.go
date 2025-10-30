@@ -45,7 +45,7 @@ func (asql *Repository) Create(db shared.SQLExecutor, account *Account) error {
 		username, 
 		password, 
 		email, 	
-		avatar,
+		avatar
 	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	_, errInsert := db.Exec(
 		query,

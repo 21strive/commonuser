@@ -1,4 +1,4 @@
-package migrate
+package main
 
 import (
 	"database/sql"
@@ -19,7 +19,6 @@ func main() {
 		dbPassword = flag.String("password", "", "Database password")
 		dbName     = flag.String("db", "", "Database name")
 		entityName = flag.String("entity", "", "Entity name (required)")
-		tables     = flag.String("tables", "all", "Tables to create: all, account, reset, update, session (comma-separated)")
 		sslMode    = flag.String("ssl", "disable", "SSL mode (disable, require)")
 	)
 
@@ -70,41 +69,58 @@ func main() {
 
 	fmt.Printf("Connected to database: %s\n", *dbName)
 
-	// Parse tables to create
-	tablesToCreate := strings.Split(strings.ToLower(*tables), ",")
-	createAll := contains(tablesToCreate, "all")
-
-	// Create tables
-	if createAll || contains(tablesToCreate, "account") {
-		fmt.Printf("Creating account table for entity: %s\n", *entityName)
-		if err := CreateAccountTableSQL(db, *entityName); err != nil {
-			log.Fatalf("Failed to create account table: %v", err)
-		}
-		fmt.Println("✓ Account table created successfully")
+	// Start transaction for atomic table creation
+	fmt.Println("Starting database transaction...")
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatalf("Failed to start transaction: %v", err)
 	}
-
-	if createAll || contains(tablesToCreate, "reset") {
-		fmt.Printf("Creating reset password table for entity: %s\n", *entityName)
-		if err := CreateResetPasswordTableSQL(db, *entityName); err != nil {
-			log.Fatalf("Failed to create reset password table: %v", err)
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			log.Fatalf("Transaction rolled back due to panic: %v", r)
 		}
-		fmt.Println("✓ Reset password table created successfully")
+	}()
+
+	// Create tables within transaction
+	fmt.Printf("Creating account table for entity: %s\n", *entityName)
+	if err := CreateAccountTableSQL(tx, *entityName); err != nil {
+		tx.Rollback()
+		log.Fatalf("Failed to create account table: %v", err)
 	}
+	fmt.Println("✓ Account table created successfully")
 
-	if createAll || contains(tablesToCreate, "update") {
-		fmt.Printf("Creating update email table for entity: %s\n", *entityName)
-		if err := CreateUpdateEmailTableSQL(db, *entityName); err != nil {
-			log.Fatalf("Failed to create update email table: %v", err)
-		}
-		fmt.Println("✓ Update email table created successfully")
+	fmt.Printf("Creating reset password table for entity: %s\n", *entityName)
+	if err := CreateResetPasswordTableSQL(tx, *entityName); err != nil {
+		tx.Rollback()
+		log.Fatalf("Failed to create reset password table: %v", err)
 	}
+	fmt.Println("✓ Reset password table created successfully")
 
-	if createAll || contains(tablesToCreate, "session") {
-		fmt.Printf("Creating session table for entity: %s\n", *entityName)
-		if err := CreateSessionTableSQL(db, *entityName); err != nil {
-			log.Fatalf("Failed to create session table: %v", err)
-		}
-		fmt.Println("✓ Session table created successfully")
+	fmt.Printf("Creating update email table for entity: %s\n", *entityName)
+	if err := CreateUpdateEmailTableSQL(tx, *entityName); err != nil {
+		tx.Rollback()
+		log.Fatalf("Failed to create update email table: %v", err)
+	}
+	fmt.Println("✓ Update email table created successfully")
+
+	fmt.Printf("Creating session table for entity: %s\n", *entityName)
+	if err := CreateSessionTableSQL(tx, *entityName); err != nil {
+		tx.Rollback()
+		log.Fatalf("Failed to create session table: %v", err)
+	}
+	fmt.Println("✓ Session table created successfully")
+
+	fmt.Printf("Creating verification table for entity: %s\n", *entityName)
+	if err := CreateVerificationTableSQL(tx, *entityName); err != nil {
+		tx.Rollback()
+		log.Fatalf("Failed to create verification table: %v", err)
+	}
+	fmt.Println("✓ Verification table created successfully")
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		log.Fatalf("Failed to commit transaction: %v", err)
 	}
 
 	fmt.Println("\nAll tables created successfully!")
@@ -119,7 +135,7 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func CreateResetPasswordTableSQL(db *sql.DB, entityName string) error {
+func CreateResetPasswordTableSQL(tx *sql.Tx, entityName string) error {
 	tableName := entityName + "_reset_password"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
 		uuid VARCHAR(255) PRIMARY KEY,
@@ -129,16 +145,16 @@ func CreateResetPasswordTableSQL(db *sql.DB, entityName string) error {
 		account_uuid VARCHAR(255) NOT NULL,
 		token VARCHAR(255) UNIQUE NOT NULL,
 		processed BOOLEAN DEFAULT FALSE,
-		expired_at TIMESTAMP,
+		expired_at TIMESTAMP
     );
-    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_email ON ` + tableName + `(email);
+    
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_token ON ` + tableName + `(token);`
 
-	_, err := db.Exec(query)
+	_, err := tx.Exec(query)
 	return err
 }
 
-func CreateAccountTableSQL(db *sql.DB, entityName string) error {
+func CreateAccountTableSQL(tx *sql.Tx, entityName string) error {
 	query := `CREATE TABLE IF NOT EXISTS ` + entityName + ` (
        uuid VARCHAR(255) PRIMARY KEY,
        randid VARCHAR(255) UNIQUE,
@@ -155,11 +171,11 @@ func CreateAccountTableSQL(db *sql.DB, entityName string) error {
 	CREATE INDEX IF NOT EXISTS idx_` + entityName + `_uuid ON ` + entityName + `(uuid);
     CREATE INDEX IF NOT EXISTS idx_` + entityName + `_username ON ` + entityName + `(username);`
 
-	_, err := db.Exec(query)
+	_, err := tx.Exec(query)
 	return err
 }
 
-func CreateUpdateEmailTableSQL(db *sql.DB, entityName string) error {
+func CreateUpdateEmailTableSQL(tx *sql.Tx, entityName string) error {
 	tableName := entityName + "_update_email"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
 		uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -172,16 +188,16 @@ func CreateUpdateEmailTableSQL(db *sql.DB, entityName string) error {
 		reset_token VARCHAR(255) NOT NULL,
 		processed BOOLEAN DEFAULT FALSE,
 		revoked BOOLEAN DEFAULT FALSE, 
-		expired_at TIMESTAMP,
+		expired_at TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_new_email_address ON ` + tableName + `(new_email_address);`
 
-	_, err := db.Exec(query)
+	_, err := tx.Exec(query)
 	return err
 }
 
-func CreateSessionTableSQL(db *sql.DB, entityName string) error {
+func CreateSessionTableSQL(tx *sql.Tx, entityName string) error {
 	tableName := entityName + "_session"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
        uuid VARCHAR(255) PRIMARY KEY,
@@ -204,6 +220,23 @@ func CreateSessionTableSQL(db *sql.DB, entityName string) error {
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_expires_at ON ` + tableName + `(expires_at);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_is_active ON ` + tableName + `(is_active);`
 
-	_, err := db.Exec(query)
+	_, err := tx.Exec(query)
+	return err
+}
+
+func CreateVerificationTableSQL(tx *sql.Tx, entityName string) error {
+	tableName := entityName + "_verification"
+	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
+		uuid VARCHAR(255) PRIMARY KEY,
+		randid VARCHAR(255) UNIQUE,
+		created_at TIMESTAMP DEFAULT NOW(),
+		updated_at TIMESTAMP DEFAULT NOW(),
+		account_uuid VARCHAR(255) NOT NULL,
+		code VARCHAR(255) NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_code ON ` + tableName + `(code);`
+
+	_, err := tx.Exec(query)
 	return err
 }

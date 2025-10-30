@@ -88,7 +88,7 @@ func NewRepository(readDB *sql.DB, app *config.App) *Repository {
 	tableName := app.EntityName + "_reset_password"
 
 	// always find the most recent ticket
-	findByAccountStmt, errPrepare := readDB.Prepare("SELECT * FROM " + tableName + " WHERE accountuuid = $1 ORDER BY created_at DESC LIMIT 1")
+	findByAccountStmt, errPrepare := readDB.Prepare("SELECT * FROM " + tableName + " WHERE account_uuid = $1 ORDER BY created_at DESC LIMIT 1")
 	if errPrepare != nil {
 		panic(errPrepare)
 	}

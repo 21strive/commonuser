@@ -93,5 +93,6 @@ func NewRepository(readDB *sql.DB, app *config.App) *Repository {
 
 	return &Repository{
 		findByAccountStmt: findByAccountStmt,
+		app:               app,
 	}
 }
