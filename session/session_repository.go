@@ -21,7 +21,7 @@ func (sm *Repository) GetBase() *redifu.Base[*Session] {
 
 func (sm *Repository) Create(db shared.SQLExecutor, session *Session) error {
 	tableName := sm.entityName + "_session"
-	query := `INSERT INTO ` + tableName + ` (uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, user_agent, refresh_token, expires_at, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	query := `INSERT INTO ` + tableName + ` (uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, user_agent, refresh_token, expires_at, revoked) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 	_, err := db.Exec(query,
 		session.GetUUID(),
 		session.GetRandId(),
@@ -34,7 +34,7 @@ func (sm *Repository) Create(db shared.SQLExecutor, session *Session) error {
 		session.UserAgent,
 		session.RefreshToken,
 		session.ExpiresAt,
-		session.IsActive)
+		session.Revoked)
 	if err != nil {
 		return err
 	}
@@ -45,11 +45,12 @@ func (sm *Repository) Create(db shared.SQLExecutor, session *Session) error {
 func (sm *Repository) Update(db shared.SQLExecutor, session *Session) error {
 	session.SetUpdatedAt(time.Now().UTC())
 	tableName := sm.entityName + "_session"
-	query := `UPDATE ` + tableName + ` SET last_active_at = $1, is_active = $2, refresh_token = $3 WHERE uuid = $4`
+	query := `UPDATE ` + tableName + ` SET updated_at = $1, last_active_at = $2, revoked = $3, refresh_token = $4 WHERE uuid = $5`
 	_, err := db.Exec(
 		query,
+		session.GetUpdatedAt(),
 		session.LastActiveAt,
-		session.IsActive,
+		session.Revoked,
 		session.RefreshToken,
 		session.GetUUID(),
 	)
@@ -58,26 +59,6 @@ func (sm *Repository) Update(db shared.SQLExecutor, session *Session) error {
 	}
 
 	return sm.base.Set(session, session.RefreshToken)
-}
-
-func (sm *Repository) Deactivate(db shared.SQLExecutor, session *Session) error {
-	session.SetUpdatedAt(time.Now().UTC())
-	session.IsActive = false
-	session.DeactivatedAt = time.Now().UTC()
-
-	tableName := sm.entityName + "_session"
-	query := `UPDATE ` + tableName + ` SET is_active = $1, deactivated_at = $2 WHERE uuid = $3`
-	_, err := db.Exec(
-		query,
-		session.IsActive,
-		session.DeactivatedAt,
-		session.GetUUID(),
-	)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (sm *Repository) scanSession(scanner interface {
@@ -96,8 +77,7 @@ func (sm *Repository) scanSession(scanner interface {
 		&session.UserAgent,
 		&session.RefreshToken,
 		&session.ExpiresAt,
-		&session.IsActive,
-		&session.DeactivatedAt,
+		&session.Revoked,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

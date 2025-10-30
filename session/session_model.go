@@ -17,8 +17,7 @@ type Session struct {
 	UserAgent      string    `json:"userAgent"`
 	RefreshToken   string    `json:"refreshToken"`
 	ExpiresAt      time.Time `json:"expiresAt"`
-	IsActive       bool      `json:"revoked"`
-	DeactivatedAt  time.Time `json:"deactivatedAt"`
+	Revoked        bool      `json:"revoked"`
 }
 
 func (s *Session) SetLastActiveAt(lastActiveAt time.Time) {
@@ -60,9 +59,8 @@ func (s *Session) SetLifeSpan(refreshTokenLifeSpan time.Duration) {
 	s.ExpiresAt = expiresAt
 }
 
-func (s *Session) Deactivate() {
-	s.IsActive = false
-	s.DeactivatedAt = time.Now().UTC()
+func (s *Session) Revoke() {
+	s.Revoked = false
 }
 
 func (s *Session) MarkActivity() {
@@ -73,7 +71,7 @@ func (s *Session) IsValid() bool {
 	if s.ExpiresAt.Before(time.Now().UTC()) {
 		return false
 	}
-	if !s.IsActive {
+	if !s.Revoked {
 		return false
 	}
 	return true
@@ -82,6 +80,6 @@ func (s *Session) IsValid() bool {
 func NewSession() *Session {
 	session := &Session{}
 	redifu.InitRecord(session)
-	session.IsActive = true // active by default
+	session.Revoked = false // active by default
 	return session
 }

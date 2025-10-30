@@ -240,34 +240,34 @@ func (v *Verification) Request(db shared.SQLExecutor, accountUUID string) (*veri
 	return verificationData, nil
 }
 
-func (v *Verification) Verify(db shared.SQLExecutor, accountUUID string, code string) (bool, error) {
+func (v *Verification) Verify(db shared.SQLExecutor, accountUUID string, code string) (*account.Account, bool, error) {
 	accountFromDB, errFind := v.s.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
-		return false, errFind
+		return nil, false, errFind
 	}
 
 	verificationFromDB, errFind := v.s.verificationRepository.FindByAccount(accountFromDB)
 	if errFind != nil {
-		return false, errFind
+		return nil, false, errFind
 	}
 
 	isValid := verificationFromDB.Validate(code)
 	if !isValid {
-		return false, verification.InvalidVerificationCode
+		return nil, false, verification.InvalidVerificationCode
 	}
 
 	accountFromDB.SetEmailVerified()
 	errUpdate := v.s.accountRepository.Update(db, accountFromDB)
 	if errUpdate != nil {
-		return false, errUpdate
+		return nil, false, errUpdate
 	}
 
 	errDeleteVerification := v.s.verificationRepository.Delete(db, verificationFromDB)
 	if errDeleteVerification != nil {
-		return false, errDeleteVerification
+		return nil, false, errDeleteVerification
 	}
 
-	return true, nil
+	return accountFromDB, true, nil
 }
 
 func (v *Verification) Resend(db shared.SQLExecutor, accountUUID string) (*verification.Verification, error) {
@@ -323,12 +323,27 @@ func (s *Session) Create(db shared.SQLExecutor, session *session.Session) error 
 }
 
 func (s *Session) Ping(db shared.SQLExecutor, sessionRandId string) error {
+	sessionFromDB, errFind := s.s.sessionRepository.FindByRandId(sessionRandId)
+	if errFind != nil {
+		return errFind
+	}
+
+	if sessionFromDB.IsValid() {
+		return session.InvalidSession
+	}
+
+	sessionFromDB.SetLastActiveAt(time.Now().UTC())
+	return s.s.sessionRepository.Update(db, sessionFromDB)
+}
+
+func (s *Session) Revoke(db shared.SQLExecutor, sessionRandId string) error {
 	session, errFind := s.s.sessionRepository.FindByRandId(sessionRandId)
 	if errFind != nil {
 		return errFind
 	}
 
-	session.SetLastActiveAt(time.Now().UTC())
+	session.SetUpdatedAt(time.Now().UTC())
+	session.Revoke()
 	return s.s.sessionRepository.Update(db, session)
 }
 

@@ -160,7 +160,7 @@ func (asql *Repository) Delete(db shared.SQLExecutor, account *Account) error {
 }
 
 func (asql *Repository) SeedAllAccount() error {
-	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, suspended FROM " + asql.app.EntityName
+	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, email_verified FROM " + asql.app.EntityName
 	return asql.sortedAccountSeeder.Seed(query, accountRowsScanner, nil, nil)
 }
 
@@ -309,6 +309,7 @@ func AccountRowScanner(row *sql.Row) (*Account, error) {
 		&account.Base.Password,
 		&account.Base.Email,
 		&account.Base.Avatar,
+		&account.Base.EmailVerified,
 	)
 
 	if err != nil {
@@ -329,25 +330,25 @@ func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App)
 
 	var errPrepare error
 	findByUsernameStmt, errPrepare := readDB.Prepare(
-		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar FROM " +
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, email_verified FROM " +
 			app.EntityName + " WHERE username = $1")
 	if errPrepare != nil {
 		panic(errPrepare)
 	}
 	findByRandId, errPrepare := readDB.Prepare(
-		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar FROM " +
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, email_verified FROM " +
 			app.EntityName + " WHERE randId = $1")
 	if errPrepare != nil {
 		panic(errPrepare)
 	}
 	findByEmailStmt, errPrepare := readDB.Prepare("" +
-		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar FROM " +
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, email_verified FROM " +
 		app.EntityName + " WHERE email = $1")
 	if errPrepare != nil {
 		panic(errPrepare)
 	}
 	findByUUIDStmt, errPrepare := readDB.Prepare(
-		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar FROM " +
+		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, email_verified FROM " +
 			app.EntityName + " WHERE uuid = $1")
 	if errPrepare != nil {
 		panic(errPrepare)

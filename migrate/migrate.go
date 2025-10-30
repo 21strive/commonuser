@@ -212,14 +212,12 @@ func CreateSessionTableSQL(tx *sql.Tx, entityName string) error {
        user_agent TEXT,
        refresh_token VARCHAR(255) UNIQUE NOT NULL,
        expires_at TIMESTAMP NOT NULL,
-       is_active BOOLEAN DEFAULT TRUE,
-       deactivated_at TIMESTAMP
+       revoked BOOLEAN DEFAULT TRUE
     );
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_refresh_token ON ` + tableName + `(refresh_token);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_randid ON ` + tableName + `(randid);
-    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_expires_at ON ` + tableName + `(expires_at);
-    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_is_active ON ` + tableName + `(is_active);`
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_expires_at ON ` + tableName + `(expires_at);`
 
 	_, err := tx.Exec(query)
 	return err

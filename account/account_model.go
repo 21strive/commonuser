@@ -14,6 +14,7 @@ type UserClaims struct {
 	Username  string `json:"username,omitempty"`
 	Email     string `json:"email,omitempty"`
 	Avatar    string `json:"avatar,omitempty"`
+	Verified  bool   `json:"verified"`
 	SessionID string `json:"sessionid"`
 	jwt.RegisteredClaims
 }
@@ -102,6 +103,7 @@ func (asql *Account) GenerateAccessToken(jwtSecret string, jwtTokenIssuer string
 		Username:  asql.Username,
 		Email:     asql.Email,
 		Avatar:    asql.Avatar,
+		Verified:  asql.EmailVerified,
 		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer: jwtTokenIssuer,
