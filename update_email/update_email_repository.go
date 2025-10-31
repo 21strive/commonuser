@@ -71,6 +71,9 @@ func (em *Repository) FindRequest(account *account.Account) (*UpdateEmail, error
 		&updateEmailRequest.PreviousEmailAddress,
 		&updateEmailRequest.NewEmailAddress,
 		&updateEmailRequest.Token,
+		&updateEmailRequest.Processed,
+		&updateEmailRequest.Revoked,
+		&updateEmailRequest.ExpiredAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -103,5 +106,6 @@ func NewUpdateEmailManagerSQL(readDB *sql.DB, app *config.App) *Repository {
 
 	return &Repository{
 		findByAccountStmt: findByAccountStmt,
+		app:               app,
 	}
 }

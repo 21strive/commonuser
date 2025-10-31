@@ -21,7 +21,9 @@ func (sm *Repository) GetBase() *redifu.Base[*Session] {
 
 func (sm *Repository) Create(db shared.SQLExecutor, session *Session) error {
 	tableName := sm.entityName + "_session"
-	query := `INSERT INTO ` + tableName + ` (uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, user_agent, refresh_token, expires_at, revoked) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	query := `INSERT INTO ` + tableName + ` (
+		uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, user_agent, 
+		refresh_token, expired_at, revoked) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 	_, err := db.Exec(query,
 		session.GetUUID(),
 		session.GetRandId(),
@@ -33,7 +35,7 @@ func (sm *Repository) Create(db shared.SQLExecutor, session *Session) error {
 		session.DeviceType,
 		session.UserAgent,
 		session.RefreshToken,
-		session.ExpiresAt,
+		session.ExpiredAt,
 		session.Revoked)
 	if err != nil {
 		return err
@@ -45,7 +47,8 @@ func (sm *Repository) Create(db shared.SQLExecutor, session *Session) error {
 func (sm *Repository) Update(db shared.SQLExecutor, session *Session) error {
 	session.SetUpdatedAt(time.Now().UTC())
 	tableName := sm.entityName + "_session"
-	query := `UPDATE ` + tableName + ` SET updated_at = $1, last_active_at = $2, revoked = $3, refresh_token = $4 WHERE uuid = $5`
+	query := `UPDATE ` + tableName + ` SET updated_at = $1, last_active_at = $2, 
+			  revoked = $3, refresh_token = $4 WHERE uuid = $5`
 	_, err := db.Exec(
 		query,
 		session.GetUpdatedAt(),
@@ -76,7 +79,7 @@ func (sm *Repository) scanSession(scanner interface {
 		&session.DeviceType,
 		&session.UserAgent,
 		&session.RefreshToken,
-		&session.ExpiresAt,
+		&session.ExpiredAt,
 		&session.Revoked,
 	)
 	if err != nil {
@@ -96,7 +99,8 @@ func (sm *Repository) scanSession(scanner interface {
 
 func (sm *Repository) FindByHash(hash string) (*Session, error) {
 	tableName := sm.entityName + "_session"
-	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active, COALESCE(deactivated_at, '1970-01-01 00:00:00'::timestamp) FROM ` + tableName + ` WHERE refresh_token = $1`
+	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, 
+       				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE refresh_token = $1`
 	row := sm.db.QueryRow(query, hash)
 
 	return sm.scanSession(row)
@@ -104,7 +108,8 @@ func (sm *Repository) FindByHash(hash string) (*Session, error) {
 
 func (sm *Repository) FindByRandId(randId string) (*Session, error) {
 	tableName := sm.entityName + "_session"
-	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active, COALESCE(deactivated_at, '1970-01-01 00:00:00'::timestamp) FROM ` + tableName + ` WHERE randid = $1`
+	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, 
+       				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE randid = $1`
 	row := sm.db.QueryRow(query, randId)
 
 	return sm.scanSession(row)
@@ -121,7 +126,8 @@ func (sm *Repository) SeedByRandId(randId string) error {
 
 func (sm *Repository) FindByAccountUUID(accountUUID string) ([]Session, error) {
 	tableName := sm.entityName + "_session"
-	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, user_agent, refresh_token, expires_at, is_active, COALESCE(deactivated_at, '1970-01-01 00:00:00'::timestamp) FROM ` + tableName + ` WHERE account_uuid = $1`
+	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, 
+       				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE account_uuid = $1`
 	rows, err := sm.db.Query(query, accountUUID)
 	if err != nil {
 		return nil, err

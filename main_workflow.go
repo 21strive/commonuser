@@ -122,37 +122,6 @@ func (aw *Service) Authenticate() *Authenticate {
 	return &Authenticate{s: aw}
 }
 
-func (aw *Service) RefreshToken(db shared.SQLExecutor, account *account.Account, refreshToken string) (*string, *string, error) {
-
-	session, errFind := aw.sessionRepository.FindByHash(refreshToken)
-	if errFind != nil {
-		return nil, nil, errFind
-	}
-	if session == nil {
-		return nil, nil, SessionNotFound
-	}
-
-	valid := session.IsValid()
-	if !valid {
-		return nil, nil, InvalidSession
-	}
-
-	// generate new refresh token
-	session.GenerateRefreshToken()
-	session.SetLastActiveAt(time.Now().UTC())
-	errUpdate := aw.sessionRepository.Update(db, session)
-	if errUpdate != nil {
-		return nil, nil, errUpdate
-	}
-
-	newAccessToken, errGenerate := account.GenerateAccessToken(aw.config.JWTSecret, aw.config.JWTIssuer, aw.config.JWTLifespan, session.GetRandId())
-	if errGenerate != nil {
-		return nil, nil, errGenerate
-	}
-
-	return &newAccessToken, &session.RefreshToken, nil
-}
-
 func (aw *Service) Register(db shared.SQLExecutor, newAccount *account.Account, requireVerification bool) (*string, error) {
 	if !requireVerification {
 		newAccount.SetEmailVerified()
@@ -184,10 +153,10 @@ type UpdateOpt struct {
 	NewAvatar   string
 }
 
-func (aw *Service) Update(db shared.SQLExecutor, accountUUID string, opt UpdateOpt) error {
+func (aw *Service) Update(db shared.SQLExecutor, accountUUID string, opt UpdateOpt) (*account.Account, error) {
 	accountFromDB, errFind := aw.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
-		return errFind
+		return nil, errFind
 	}
 
 	oldUsername := accountFromDB.Username
@@ -203,10 +172,15 @@ func (aw *Service) Update(db shared.SQLExecutor, accountUUID string, opt UpdateO
 
 	errSet := aw.accountRepository.Update(db, accountFromDB)
 	if errSet != nil {
-		return errSet
+		return nil, errSet
 	}
 
-	return aw.accountRepository.UpdateReference(accountFromDB, oldUsername, accountFromDB.Username)
+	errUpdateRef := aw.accountRepository.UpdateReference(accountFromDB, oldUsername, accountFromDB.Username)
+	if errUpdateRef != nil {
+		return nil, errUpdateRef
+	}
+
+	return accountFromDB, nil
 }
 
 type Verification struct {
@@ -347,6 +321,32 @@ func (s *Session) Revoke(db shared.SQLExecutor, sessionRandId string) error {
 	return s.s.sessionRepository.Update(db, session)
 }
 
+func (s *Session) Refresh(db shared.SQLExecutor, account *account.Account, sessionRandId string) (string, string, error) {
+	sessionFromDB, errFind := s.s.sessionRepository.FindByRandId(sessionRandId)
+	if errFind != nil {
+		return "", "", errFind
+	}
+	if !sessionFromDB.IsValid() {
+		return "", "", session.InvalidSession
+	}
+
+	sessionFromDB.SetUpdatedAt(time.Now().UTC())
+	sessionFromDB.SetLastActiveAt(time.Now().UTC())
+	sessionFromDB.SetLifeSpan(s.s.config.TokenLifespan)
+	sessionFromDB.GenerateRefreshToken()
+	errUpdate := s.s.sessionRepository.Update(db, sessionFromDB)
+	if errUpdate != nil {
+		return "", "", errUpdate
+	}
+
+	newAccessToken, errGenerate := account.GenerateAccessToken(s.s.config.JWTSecret, s.s.config.JWTIssuer, s.s.config.JWTLifespan, sessionFromDB.GetRandId())
+	if errGenerate != nil {
+		return "", "", errGenerate
+	}
+
+	return newAccessToken, sessionFromDB.RefreshToken, nil
+}
+
 func (aw *Service) Session() *Session {
 	return &Session{s: aw}
 }
@@ -395,7 +395,9 @@ func (eu *Email) RequestUpdate(
 ) (*update_email.UpdateEmail, error) {
 	requestFromDB, errFind := eu.s.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
-		return nil, errFind
+		if !errors.Is(errFind, update_email.TicketNotFound) {
+			return nil, errFind
+		}
 	}
 	if requestFromDB != nil {
 		if requestFromDB.IsExpired() {
@@ -409,9 +411,9 @@ func (eu *Email) RequestUpdate(
 	}
 
 	updateEmailRequest := update_email.New()
+	updateEmailRequest.SetAccount(account)
 	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
 	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
-	updateEmailRequest.SetToken()
 	updateEmailRequest.SetExpiration()
 
 	errCreateTicket := eu.s.updateEmailRepository.CreateRequest(db, updateEmailRequest)
@@ -424,9 +426,14 @@ func (eu *Email) RequestUpdate(
 
 func (eu *Email) ValidateUpdate(
 	db shared.SQLExecutor,
-	account *account.Account,
+	accountUUID string,
 	token string,
 ) error {
+	account, errFind := eu.s.accountRepository.FindByUUID(accountUUID)
+	if errFind != nil {
+		return errFind
+	}
+
 	request, errFind := eu.s.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
 		return errFind
@@ -435,7 +442,7 @@ func (eu *Email) ValidateUpdate(
 		return nil
 	}
 
-	errValidate := request.Validate(token, false)
+	errValidate := request.Validate(token)
 	if errValidate != nil {
 		if errors.Is(errValidate, shared.RequestExpired) {
 			eu.s.updateEmailRepository.DeleteRequest(db, request)
@@ -461,15 +468,20 @@ func (eu *Email) ValidateUpdate(
 
 func (eu *Email) RevokeUpdate(
 	db shared.SQLExecutor,
-	account *account.Account,
-	token string,
+	accountUUID string,
+	revokeToken string,
 ) error {
+	account, errFind := eu.s.accountRepository.FindByUUID(accountUUID)
+	if errFind != nil {
+		return errFind
+	}
+
 	request, errFind := eu.s.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
 		return errFind
 	}
 
-	errValidate := request.Validate(token, true)
+	errValidate := request.ValidateRevoke(revokeToken)
 	if errValidate != nil {
 		return errValidate
 	}

@@ -16,7 +16,7 @@ type Session struct {
 	DeviceType     string    `json:"deviceType"`
 	UserAgent      string    `json:"userAgent"`
 	RefreshToken   string    `json:"refreshToken"`
-	ExpiresAt      time.Time `json:"expiresAt"`
+	ExpiredAt      time.Time `json:"expiredAt"`
 	Revoked        bool      `json:"revoked"`
 }
 
@@ -55,8 +55,8 @@ func (s *Session) GenerateRefreshToken() error {
 
 func (s *Session) SetLifeSpan(refreshTokenLifeSpan time.Duration) {
 	timeNow := time.Now().UTC()
-	expiresAt := timeNow.Add(refreshTokenLifeSpan)
-	s.ExpiresAt = expiresAt
+	expiredAt := timeNow.Add(refreshTokenLifeSpan)
+	s.ExpiredAt = expiredAt
 }
 
 func (s *Session) Revoke() {
@@ -68,7 +68,7 @@ func (s *Session) MarkActivity() {
 }
 
 func (s *Session) IsValid() bool {
-	if s.ExpiresAt.Before(time.Now().UTC()) {
+	if s.ExpiredAt.Before(time.Now().UTC()) {
 		return false
 	}
 	if !s.Revoked {
