@@ -84,12 +84,13 @@ func (asql *Repository) Create(db shared.SQLExecutor, account *Account) error {
 
 func (asql *Repository) Update(db shared.SQLExecutor, account *Account) error {
 	query := "UPDATE " + asql.app.EntityName +
-		" SET updated_at = $1, name = $2, username = $3, email = $4, avatar = $5, email_verified = $6 WHERE uuid = $7"
+		" SET updated_at = $1, name = $2, username = $3, password = $4, email = $5, avatar = $6, email_verified = $7 WHERE uuid = $8"
 	_, errUpdate := db.Exec(
 		query,
 		account.GetUpdatedAt(),
 		account.Name,
 		account.Username,
+		account.Password,
 		account.Email,
 		account.Avatar,
 		account.EmailVerified,

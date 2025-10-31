@@ -144,7 +144,6 @@ func CreateResetPasswordTableSQL(tx *sql.Tx, entityName string) error {
 		updated_at TIMESTAMP DEFAULT NOW(),
 		account_uuid VARCHAR(255) NOT NULL,
 		token VARCHAR(255) UNIQUE NOT NULL,
-		processed BOOLEAN DEFAULT FALSE,
 		expired_at TIMESTAMP
     );
     

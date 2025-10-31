@@ -16,44 +16,28 @@ func (ar *Repository) Create(db shared.SQLExecutor, request *ResetPassword) erro
 	tableName := ar.app.EntityName + "_reset_password"
 	query := `INSERT INTO ` + tableName + ` (
 		uuid, 
-		randId, 
+		randid, 
 		created_at, 
 		updated_at, 
 		account_uuid, 
 		token, 
-		processed,
 		expired_at
-	) VALUES ($2, $3, $4, $5, $6, $7, $8)`
+	) VALUES ($1, $2, $3, $4, $5, $6, $7)`
 	_, errInsert := db.Exec(
 		query,
-		tableName,
 		request.GetUUID(),
 		request.GetRandId(),
 		request.GetCreatedAt(),
 		request.GetUpdatedAt(),
 		request.AccountUUID,
 		request.Token,
-		request.Processed,
 		request.ExpiredAt)
 
 	return errInsert
 }
 
-func (ar *Repository) Update(db shared.SQLExecutor, request *ResetPassword) error {
-	tableName := ar.app.EntityName + "_reset_password"
-	query := `UPDATE ` + tableName + ` SET updated_at = $1, processed = $2 WHERE uuid = $3`
-	_, errUpdate := db.Exec(
-		query,
-		request.GetUpdatedAt(),
-		request.Processed,
-		request.GetUUID(),
-	)
-
-	return errUpdate
-}
-
 func (ar *Repository) Find(account *account.Account) (*ResetPassword, error) {
-	row := ar.findByAccountStmt.QueryRow(account.Email)
+	row := ar.findByAccountStmt.QueryRow(account.GetUUID())
 	resetPasswordRequest := New()
 	err := row.Scan(
 		&resetPasswordRequest.UUID,
@@ -66,7 +50,7 @@ func (ar *Repository) Find(account *account.Account) (*ResetPassword, error) {
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, shared.RequestNotFound
+			return nil, TicketNotFound
 		}
 		return nil, err
 	}

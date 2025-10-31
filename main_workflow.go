@@ -531,7 +531,9 @@ type Password struct {
 func (pu *Password) RequestReset(db shared.SQLExecutor, account *account.Account, expiration *time.Time) (*reset_password.ResetPassword, error) {
 	ticketFromDB, errFind := pu.s.resetPasswordRepository.Find(account)
 	if errFind != nil {
-		return nil, errFind
+		if !errors.Is(errFind, reset_password.TicketNotFound) {
+			return nil, errFind
+		}
 	}
 	if ticketFromDB != nil {
 		if ticketFromDB.IsExpired() {
@@ -558,17 +560,10 @@ func (pu *Password) RequestReset(db shared.SQLExecutor, account *account.Account
 	return newResetPasswordTicket, nil
 }
 
-func (pu *Password) ValidateReset(
-	db shared.SQLExecutor,
-	account *account.Account,
-	newPassword string,
-	token string) error {
+func (pu *Password) ValidateReset(db shared.SQLExecutor, account *account.Account, newPassword string, token string) error {
 	ticketFromDB, errFind := pu.s.resetPasswordRepository.Find(account)
 	if errFind != nil {
 		return errFind
-	}
-	if ticketFromDB.Processed {
-		return nil
 	}
 
 	errValidate := ticketFromDB.Validate(token)
@@ -581,13 +576,13 @@ func (pu *Password) ValidateReset(
 	}
 
 	account.SetPassword(newPassword)
+	account.SetUpdatedAt(time.Now().UTC())
 	errUpdate := pu.s.accountRepository.Update(db, account)
 	if errUpdate != nil {
 		return errUpdate
 	}
 
-	ticketFromDB.SetProcessed()
-	errUpdateTicket := pu.s.resetPasswordRepository.Update(db, ticketFromDB)
+	errUpdateTicket := pu.s.resetPasswordRepository.Delete(db, ticketFromDB)
 	if errUpdateTicket != nil {
 		return errUpdateTicket
 	}
@@ -595,8 +590,13 @@ func (pu *Password) ValidateReset(
 	return nil
 }
 
-func (pu *Password) DeleteReset(db shared.SQLExecutor, account *account.Account) error {
-	requestFromDB, errFind := pu.s.resetPasswordRepository.Find(account)
+func (pu *Password) DeleteReset(db shared.SQLExecutor, accountUUID string) error {
+	accountFromDB, errFind := pu.s.accountRepository.FindByUUID(accountUUID)
+	if errFind != nil {
+		return errFind
+	}
+
+	requestFromDB, errFind := pu.s.resetPasswordRepository.Find(accountFromDB)
 	if errFind != nil {
 		return errFind
 	}
@@ -604,8 +604,8 @@ func (pu *Password) DeleteReset(db shared.SQLExecutor, account *account.Account)
 	return pu.s.resetPasswordRepository.Delete(db, requestFromDB)
 }
 
-func (pu *Password) Update(db shared.SQLExecutor, account *account.Account, oldPassword string, newPassword string) error {
-	accountFromDB, errFind := pu.s.accountRepository.FindByUUID(account.GetUUID())
+func (pu *Password) Update(db shared.SQLExecutor, accountUUID string, oldPassword string, newPassword string) error {
+	accountFromDB, errFind := pu.s.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return errFind
 	}

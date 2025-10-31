@@ -12,7 +12,6 @@ type ResetPassword struct {
 	*redifu.Record `bson:",inline" json:",inline"`
 	AccountUUID    string    `db:"accountuuid"`
 	Token          string    `db:"token"`
-	Processed      bool      `db:"processed"`
 	ExpiredAt      time.Time `db:"expiredat"`
 }
 
@@ -30,10 +29,6 @@ func (rpsql *ResetPassword) SetExpiredAt(expirationTime *time.Time) {
 
 func (rpsql *ResetPassword) IsExpired() bool {
 	return time.Now().UTC().After(rpsql.ExpiredAt)
-}
-
-func (rpsql *ResetPassword) SetProcessed() {
-	rpsql.Processed = true
 }
 
 func (rpsql *ResetPassword) Validate(token string) error {
