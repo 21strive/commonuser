@@ -187,8 +187,8 @@ func CreateUpdateEmailTableSQL(tx *sql.Tx, entityName string) error {
 		previous_email_address VARCHAR(255),
 		new_email_address VARCHAR(255) UNIQUE NOT NULL,
 		reset_token VARCHAR(255) NOT NULL,
+		revoke_token VARCHAR(255) NOT NULL,
 		processed BOOLEAN DEFAULT FALSE,
-		revoked BOOLEAN DEFAULT FALSE, 
 		expired_at TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);

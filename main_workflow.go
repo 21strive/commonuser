@@ -392,21 +392,24 @@ func (eu *Email) RequestUpdate(
 	db shared.SQLExecutor,
 	account *account.Account,
 	newEmailAddress string,
-) (*update_email.UpdateEmail, error) {
+) (string, string, error) {
+	var resetToken string
+	var revokeToken string
+
 	requestFromDB, errFind := eu.s.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
 		if !errors.Is(errFind, update_email.TicketNotFound) {
-			return nil, errFind
+			return resetToken, revokeToken, errFind
 		}
 	}
 	if requestFromDB != nil {
 		if requestFromDB.IsExpired() {
 			errDeleteRequest := eu.s.updateEmailRepository.DeleteRequest(db, requestFromDB)
 			if errDeleteRequest != nil {
-				return nil, errDeleteRequest
+				return resetToken, revokeToken, errDeleteRequest
 			}
 		} else {
-			return requestFromDB, nil
+			return resetToken, revokeToken, nil
 		}
 	}
 
@@ -415,13 +418,21 @@ func (eu *Email) RequestUpdate(
 	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
 	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
 	updateEmailRequest.SetExpiration()
+	resetToken, errGen := updateEmailRequest.SetToken()
+	if errGen != nil {
+		return resetToken, revokeToken, errGen
+	}
+	revokeToken, errGen = updateEmailRequest.SetRevokeToken()
+	if errGen != nil {
+		return resetToken, revokeToken, errGen
+	}
 
 	errCreateTicket := eu.s.updateEmailRepository.CreateRequest(db, updateEmailRequest)
 	if errCreateTicket != nil {
-		return nil, errCreateTicket
+		return resetToken, revokeToken, errCreateTicket
 	}
 
-	return updateEmailRequest, nil
+	return resetToken, revokeToken, nil
 }
 
 func (eu *Email) ValidateUpdate(
@@ -492,10 +503,9 @@ func (eu *Email) RevokeUpdate(
 		return errUpdate
 	}
 
-	request.SetRevoked()
-	errUpdateTicket := eu.s.updateEmailRepository.UpdateRequest(db, request)
-	if errUpdateTicket != nil {
-		return errUpdateTicket
+	errDeleteTicket := eu.s.updateEmailRepository.DeleteRequest(db, request)
+	if errDeleteTicket != nil {
+		return errDeleteTicket
 	}
 
 	return nil

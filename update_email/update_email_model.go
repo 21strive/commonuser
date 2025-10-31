@@ -17,7 +17,6 @@ type UpdateEmail struct {
 	Token                string    `db:"token"`
 	RevokeToken          string    `db:"revoke_token"`
 	Processed            bool      `db:"processed"`
-	Revoked              bool      `db:"revoked"`
 	ExpiredAt            time.Time `db:"expired_at"`
 }
 
@@ -33,27 +32,27 @@ func (ue *UpdateEmail) SetNewEmailAddress(email string) {
 	ue.NewEmailAddress = email
 }
 
-func (ue *UpdateEmail) SetToken() error {
+func (ue *UpdateEmail) SetToken() (string, error) {
 	token := item.RandId()
 	argon := argon2.DefaultConfig()
 	encoded, err := argon.HashEncoded([]byte(token))
 	if err != nil {
-		return err
+		return token, err
 	}
 
 	ue.Token = string(encoded)
-	return nil
+	return token, nil
 }
 
-func (ue *UpdateEmail) SetRevokeToken() error {
+func (ue *UpdateEmail) SetRevokeToken() (string, error) {
 	token := item.RandId()
 	argon := argon2.DefaultConfig()
 	encoded, err := argon.HashEncoded([]byte(token))
 	if err != nil {
-		return err
+		return token, err
 	}
 	ue.RevokeToken = string(encoded)
-	return nil
+	return token, nil
 }
 
 func (ue *UpdateEmail) SetExpiration() {
@@ -62,10 +61,6 @@ func (ue *UpdateEmail) SetExpiration() {
 
 func (ue *UpdateEmail) SetProcessed() {
 	ue.Processed = true
-}
-
-func (ue *UpdateEmail) SetRevoked() {
-	ue.Revoked = true
 }
 
 func (ue *UpdateEmail) Validate(token string) error {
@@ -86,10 +81,6 @@ func (ue *UpdateEmail) Validate(token string) error {
 }
 
 func (ue *UpdateEmail) ValidateRevoke(token string) error {
-	if ue.RevokeToken != token {
-		return shared.InvalidToken
-	}
-
 	match, err := argon2.VerifyEncoded([]byte(token), []byte(ue.RevokeToken))
 	if err != nil {
 		return err
@@ -109,8 +100,6 @@ func New() *UpdateEmail {
 	ue := &UpdateEmail{}
 	redifu.InitRecord(ue)
 
-	ue.SetToken()
-	ue.SetRevokeToken()
 	ue.SetExpiration()
 	ue.Processed = false
 	return ue

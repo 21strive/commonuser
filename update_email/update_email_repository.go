@@ -24,8 +24,8 @@ func (em *Repository) CreateRequest(db shared.SQLExecutor, request *UpdateEmail)
 			previous_email_address, 
 			new_email_address, 
 			reset_token,
-			processed, 
-			revoked,
+			revoke_token,
+			processed,
 			expired_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	_, errInsert := db.Exec(
@@ -38,8 +38,8 @@ func (em *Repository) CreateRequest(db shared.SQLExecutor, request *UpdateEmail)
 		request.PreviousEmailAddress,
 		request.NewEmailAddress,
 		request.Token,
+		request.RevokeToken,
 		request.Processed,
-		request.Revoked,
 		request.ExpiredAt)
 
 	return errInsert
@@ -47,12 +47,11 @@ func (em *Repository) CreateRequest(db shared.SQLExecutor, request *UpdateEmail)
 
 func (em *Repository) UpdateRequest(db shared.SQLExecutor, request *UpdateEmail) error {
 	tableName := em.app.EntityName + "_update_email"
-	query := `UPDATE ` + tableName + ` SET updated_at = $1, processed = $2, revoked = $3 WHERE uuid = $4`
+	query := `UPDATE ` + tableName + ` SET updated_at = $1, processed = $2 WHERE uuid = $3`
 	_, errUpdate := db.Exec(
 		query,
 		request.GetUpdatedAt(),
 		request.Processed,
-		request.Revoked,
 		request.GetUUID(),
 	)
 
@@ -71,8 +70,8 @@ func (em *Repository) FindRequest(account *account.Account) (*UpdateEmail, error
 		&updateEmailRequest.PreviousEmailAddress,
 		&updateEmailRequest.NewEmailAddress,
 		&updateEmailRequest.Token,
+		&updateEmailRequest.RevokeToken,
 		&updateEmailRequest.Processed,
-		&updateEmailRequest.Revoked,
 		&updateEmailRequest.ExpiredAt,
 	)
 	if err != nil {
