@@ -630,7 +630,7 @@ func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Se
 	accountManager := account.NewRepository(readDB, redisClient, app)
 	sessionManager := session.NewRepository(readDB, redisClient, app)
 	verificationManager := verification.NewRepository(readDB, app)
-	updateEmailManager := update_email.NewUpdateEmailManagerSQL(readDB, app)
+	updateEmailManager := update_email.NewUpdateEmailManager(readDB, app)
 	resetPasswordManager := reset_password.NewRepository(readDB, app)
 
 	return &Service{

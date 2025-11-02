@@ -60,7 +60,7 @@ func (s *Session) SetLifeSpan(refreshTokenLifeSpan time.Duration) {
 }
 
 func (s *Session) Revoke() {
-	s.Revoked = false
+	s.Revoked = true
 }
 
 func (s *Session) MarkActivity() {

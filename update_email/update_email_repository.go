@@ -94,7 +94,7 @@ func (em *Repository) DeleteRequest(db shared.SQLExecutor, request *UpdateEmail)
 	return nil
 }
 
-func NewUpdateEmailManagerSQL(readDB *sql.DB, app *config.App) *Repository {
+func NewUpdateEmailManager(readDB *sql.DB, app *config.App) *Repository {
 	tableName := app.EntityName + "_update_email"
 
 	// always find the most recent ticket
