@@ -474,6 +474,18 @@ func (eu *Email) ValidateUpdate(
 		return errUpdateTicket
 	}
 
+	// revoke all running sessions
+	errRevoke := eu.s.sessionRepository.RevokeAllByAccount(db, account)
+	if errRevoke != nil {
+		return errRevoke
+	}
+
+	// re-seed revoked sessions to cache
+	_, errFind = eu.s.sessionRepository.FindByAccountUUID(account.GetUUID())
+	if errFind != nil {
+		return errFind
+	}
+
 	return nil
 }
 
@@ -585,6 +597,18 @@ func (pu *Password) ValidateReset(db shared.SQLExecutor, account *account.Accoun
 	errUpdateTicket := pu.s.resetPasswordRepository.Delete(db, ticketFromDB)
 	if errUpdateTicket != nil {
 		return errUpdateTicket
+	}
+
+	// revoke all running sessions
+	errRevoke := pu.s.sessionRepository.RevokeAllByAccount(db, account)
+	if errRevoke != nil {
+		return errRevoke
+	}
+
+	// re-seed all revoked sessions
+	_, errFind = pu.s.sessionRepository.FindByAccountUUID(account.GetUUID())
+	if errFind != nil {
+		return errFind
 	}
 
 	return nil

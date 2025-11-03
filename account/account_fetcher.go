@@ -31,9 +31,6 @@ func (af *Fetcher) FetchByUsername(username string) (*Account, error) {
 
 	account, err := af.base.Get(accountRef.AccountRandId)
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &account, nil

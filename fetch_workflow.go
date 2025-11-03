@@ -1,6 +1,7 @@
 package commonuser
 
 import (
+	"errors"
 	"github.com/21strive/commonuser/account"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/session"
@@ -12,48 +13,54 @@ type Fetchers struct {
 	sessionFetcher *session.SessionFetcher
 }
 
-func (af *Fetchers) FetchByUsername(username string) (*account.Account, bool, error) {
+func (af *Fetchers) FetchByUsername(username string) (*account.Account, error) {
+	isBlank, errGet := af.AccountFetcher.IsReferenceBlank(username)
+	if errGet != nil {
+		if !errors.Is(errGet, redis.Nil) {
+			return nil, errGet
+		}
+	}
+	if isBlank {
+		return nil, account.NotFound
+	}
+
 	accountFromDB, err := af.AccountFetcher.FetchByUsername(username)
 	if err != nil {
-		return nil, false, err
-		if accountFromDB == nil {
-			isBlank, errGet := af.AccountFetcher.IsReferenceBlank(username)
-			if errGet != nil {
-				return nil, false, errGet
-			}
-			if isBlank {
-				return nil, false, account.NotFound
-			}
-			return nil, true, account.NotFound
-		}
+		return nil, err
+	}
+	if accountFromDB == nil {
+		return nil, account.SeedRequired
 	}
 
 	af.AccountFetcher.DelBlankReference(username)
 	af.AccountFetcher.DelBlank(accountFromDB.GetRandId())
 
-	return accountFromDB, false, nil
+	return accountFromDB, nil
 }
 
-func (af *Fetchers) FetchByRandId(randId string) (*account.Account, bool, error) {
+func (af *Fetchers) FetchByRandId(randId string) (*account.Account, error) {
+	isBlank, errGet := af.AccountFetcher.IsBlank(randId)
+	if errGet != nil {
+		if !errors.Is(errGet, redis.Nil) {
+			return nil, errGet
+		}
+	}
+	if isBlank {
+		return nil, account.NotFound
+	}
+
 	accountFromDB, err := af.AccountFetcher.FetchByRandId(randId)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if accountFromDB == nil {
-		isBlank, errGet := af.AccountFetcher.IsBlank(randId)
-		if errGet != nil {
-			return nil, false, errGet
-		}
-		if isBlank {
-			return nil, false, account.NotFound
-		}
-		return nil, true, account.NotFound
+
 	}
 
 	af.AccountFetcher.DelBlank(accountFromDB.GetRandId())
 	af.AccountFetcher.DelBlankReference(accountFromDB.Username)
 
-	return accountFromDB, false, nil
+	return accountFromDB, nil
 }
 
 func (af *Fetchers) FetchAll(sortDir string) ([]account.Account, bool, error) {

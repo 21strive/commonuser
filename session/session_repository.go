@@ -2,6 +2,7 @@ package session
 
 import (
 	"database/sql"
+	"github.com/21strive/commonuser/account"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/shared"
 	"github.com/21strive/redifu"
@@ -13,6 +14,7 @@ type Repository struct {
 	base       *redifu.Base[*Session]
 	db         *sql.DB
 	entityName string
+	tableName  string
 }
 
 func (sm *Repository) GetBase() *redifu.Base[*Session] {
@@ -149,6 +151,17 @@ func (sm *Repository) FindByAccountUUID(accountUUID string) ([]Session, error) {
 	}
 
 	return sessions, nil
+}
+
+func (sm *Repository) RevokeAllByAccount(db shared.SQLExecutor, account *account.Account) error {
+	tableName := sm.entityName + "_session"
+	query := "UPDATE " + tableName + " SET revoked = true WHERE account_uuid = $1"
+	_, errorExec := db.Exec(query, account.GetUUID())
+	if errorExec != nil {
+		return errorExec
+	}
+
+	return nil
 }
 
 func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App) *Repository {
