@@ -18,10 +18,6 @@ func (sf *SessionFetcher) FetchByRandId(randId string) (*Session, error) {
 	return &session, nil
 }
 
-func (sf *SessionFetcher) IsBlankByRandId(randId string) (bool, error) {
-	return sf.base.IsBlank(randId)
-}
-
 func NewSessionFetcher(client redis.UniversalClient, app *config.App) *SessionFetcher {
 	base := redifu.NewBase[Session](client, app.EntityName+":session:%s", app.RecordAge)
 	return &SessionFetcher{

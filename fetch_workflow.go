@@ -5,6 +5,7 @@ import (
 	"github.com/21strive/commonuser/account"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/session"
+	"github.com/21strive/commonuser/shared"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -13,8 +14,12 @@ type Fetchers struct {
 	sessionFetcher *session.SessionFetcher
 }
 
-func (af *Fetchers) FetchByUsername(username string) (*account.Account, error) {
-	isBlank, errGet := af.AccountFetcher.IsReferenceBlank(username)
+type AccountFetchers struct {
+	f *Fetchers
+}
+
+func (af *AccountFetchers) ByUsername(username string) (*account.Account, error) {
+	isBlank, errGet := af.f.AccountFetcher.IsReferenceBlank(username)
 	if errGet != nil {
 		if !errors.Is(errGet, redis.Nil) {
 			return nil, errGet
@@ -24,7 +29,7 @@ func (af *Fetchers) FetchByUsername(username string) (*account.Account, error) {
 		return nil, account.NotFound
 	}
 
-	accountFromDB, err := af.AccountFetcher.FetchByUsername(username)
+	accountFromDB, err := af.f.AccountFetcher.FetchByUsername(username)
 	if err != nil {
 		return nil, err
 	}
@@ -32,14 +37,11 @@ func (af *Fetchers) FetchByUsername(username string) (*account.Account, error) {
 		return nil, account.SeedRequired
 	}
 
-	af.AccountFetcher.DelBlankReference(username)
-	af.AccountFetcher.DelBlank(accountFromDB.GetRandId())
-
 	return accountFromDB, nil
 }
 
-func (af *Fetchers) FetchByRandId(randId string) (*account.Account, error) {
-	isBlank, errGet := af.AccountFetcher.IsBlank(randId)
+func (af *AccountFetchers) ByRandId(randId string) (*account.Account, error) {
+	isBlank, errGet := af.f.AccountFetcher.IsBlank(randId)
 	if errGet != nil {
 		if !errors.Is(errGet, redis.Nil) {
 			return nil, errGet
@@ -49,37 +51,54 @@ func (af *Fetchers) FetchByRandId(randId string) (*account.Account, error) {
 		return nil, account.NotFound
 	}
 
-	accountFromDB, err := af.AccountFetcher.FetchByRandId(randId)
+	accountFromDB, err := af.f.AccountFetcher.FetchByRandId(randId)
 	if err != nil {
 		return nil, err
 	}
 	if accountFromDB == nil {
-
+		return nil, account.SeedRequired
 	}
-
-	af.AccountFetcher.DelBlank(accountFromDB.GetRandId())
-	af.AccountFetcher.DelBlankReference(accountFromDB.Username)
 
 	return accountFromDB, nil
 }
 
-func (af *Fetchers) FetchAll(sortDir string) ([]account.Account, bool, error) {
-	accounts, err := af.AccountFetcher.FetchAll(sortDir)
-	if err != nil {
-		return nil, false, err
+func (af *AccountFetchers) All(sortDir string) ([]account.Account, error) {
+	isBlank, errCheck := af.f.AccountFetcher.IsSortedBlank()
+	if errCheck != nil {
+		return nil, errCheck
 	}
-	if len(accounts) == 0 {
-		isBlank, errCheck := af.AccountFetcher.IsSortedBlank()
-		if errCheck != nil {
-			return nil, false, errCheck
-		}
-		if isBlank {
-			return nil, false, nil
-		}
-		return nil, true, nil
+	if isBlank {
+		return nil, nil
 	}
 
-	return accounts, false, nil
+	accounts, err := af.f.AccountFetcher.FetchAll(sortDir)
+	if err != nil {
+		return nil, err
+	}
+	if len(accounts) == 0 {
+		return nil, account.SeedRequired
+	}
+
+	return accounts, nil
+}
+
+func (f *Fetchers) FetchAccount() *AccountFetchers {
+	return &AccountFetchers{f: f}
+}
+
+func (f *Fetchers) PingSession(sessionRandId string) (*session.Session, error) {
+	sessionFromCache, err := f.sessionFetcher.FetchByRandId(sessionRandId)
+	if err != nil {
+		return nil, err
+	}
+	if sessionFromCache == nil {
+		return nil, shared.Unauthorized
+	}
+	if !sessionFromCache.IsValid() {
+		return nil, shared.Unauthorized
+	}
+
+	return sessionFromCache, nil
 }
 
 func NewFetchers(redisClient redis.UniversalClient, app *config.App) *Fetchers {

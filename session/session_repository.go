@@ -11,10 +11,11 @@ import (
 )
 
 type Repository struct {
-	base       *redifu.Base[*Session]
-	db         *sql.DB
-	entityName string
-	tableName  string
+	base                  *redifu.Base[*Session]
+	entityName            string
+	tableName             string
+	findByRandIdStmt      *sql.Stmt
+	findByAccountUUIDStmt *sql.Stmt
 }
 
 func (sm *Repository) GetBase() *redifu.Base[*Session] {
@@ -43,7 +44,7 @@ func (sm *Repository) Create(db shared.SQLExecutor, session *Session) error {
 		return err
 	}
 
-	return sm.base.Set(session, session.RefreshToken)
+	return sm.base.Set(session)
 }
 
 func (sm *Repository) Update(db shared.SQLExecutor, session *Session) error {
@@ -63,7 +64,7 @@ func (sm *Repository) Update(db shared.SQLExecutor, session *Session) error {
 		return err
 	}
 
-	return sm.base.Set(session, session.RefreshToken)
+	return sm.base.Set(session)
 }
 
 func (sm *Repository) scanSession(scanner interface {
@@ -91,7 +92,7 @@ func (sm *Repository) scanSession(scanner interface {
 		return nil, err
 	}
 
-	err = sm.base.Set(session, session.RefreshToken)
+	err = sm.base.Set(session)
 	if err != nil {
 		return nil, err
 	}
@@ -99,21 +100,8 @@ func (sm *Repository) scanSession(scanner interface {
 	return session, nil
 }
 
-func (sm *Repository) FindByHash(hash string) (*Session, error) {
-	tableName := sm.entityName + "_session"
-	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, 
-       				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE refresh_token = $1`
-	row := sm.db.QueryRow(query, hash)
-
-	return sm.scanSession(row)
-}
-
 func (sm *Repository) FindByRandId(randId string) (*Session, error) {
-	tableName := sm.entityName + "_session"
-	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, 
-       				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE randid = $1`
-	row := sm.db.QueryRow(query, randId)
-
+	row := sm.findByRandIdStmt.QueryRow(randId)
 	return sm.scanSession(row)
 }
 
@@ -127,10 +115,7 @@ func (sm *Repository) SeedByRandId(randId string) error {
 }
 
 func (sm *Repository) FindByAccountUUID(accountUUID string) ([]Session, error) {
-	tableName := sm.entityName + "_session"
-	query := `SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_info, 
-       				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE account_uuid = $1`
-	rows, err := sm.db.Query(query, accountUUID)
+	rows, err := sm.findByAccountUUIDStmt.Query(accountUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +138,23 @@ func (sm *Repository) FindByAccountUUID(accountUUID string) ([]Session, error) {
 	return sessions, nil
 }
 
-func (sm *Repository) RevokeAllByAccount(db shared.SQLExecutor, account *account.Account) error {
+func (sm *Repository) SeedByAccount(accountUUID string) error {
+	sessionsFromDB, errFind := sm.FindByAccountUUID(accountUUID)
+	if errFind != nil {
+		return errFind
+	}
+
+	for _, sessionFromDB := range sessionsFromDB {
+		err := sm.base.Set(&sessionFromDB)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (sm *Repository) RevokeAll(db shared.SQLExecutor, account *account.Account) error {
 	tableName := sm.entityName + "_session"
 	query := "UPDATE " + tableName + " SET revoked = true WHERE account_uuid = $1"
 	_, errorExec := db.Exec(query, account.GetUUID())
@@ -164,11 +165,36 @@ func (sm *Repository) RevokeAllByAccount(db shared.SQLExecutor, account *account
 	return nil
 }
 
+func (sm *Repository) PurgeInvalid(db shared.SQLExecutor) error {
+	tableName := sm.entityName + "_session"
+	query := "DELETE FROM " + tableName + " WHERE expired_at < NOW() AND revoked = true"
+	_, errorExec := db.Exec(query)
+	if errorExec != nil {
+		return errorExec
+	}
+
+	return nil
+}
+
 func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App) *Repository {
-	base := redifu.NewBase[*Session](redis, app.EntityName+":session:%s", app.RecordAge)
+	tableName := app.EntityName + "_session"
+
+	findByRandIdStmt, errPrepare := readDB.Prepare(`SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, 
+       				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE randid = $1`)
+	if errPrepare != nil {
+		panic(errPrepare)
+	}
+	findManyByAccountStmt, errPrepare := readDB.Prepare(`SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, 
+       				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE account_uuid = $1`)
+	if errPrepare != nil {
+		panic(errPrepare)
+	}
+
+	base := redifu.NewBase[*Session](redis, app.EntityName+":session:%s", app.TokenLifespan)
 	return &Repository{
-		base:       base,
-		db:         readDB,
-		entityName: app.EntityName,
+		base:                  base,
+		entityName:            app.EntityName,
+		findByRandIdStmt:      findByRandIdStmt,
+		findByAccountUUIDStmt: findManyByAccountStmt,
 	}
 }

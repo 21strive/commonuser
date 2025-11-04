@@ -84,10 +84,10 @@ func (em *Repository) FindRequest(account *account.Account) (*UpdateEmail, error
 	return updateEmailRequest, nil
 }
 
-func (em *Repository) DeleteRequest(db shared.SQLExecutor, request *UpdateEmail) error {
+func (em *Repository) DeleteAll(db shared.SQLExecutor, account *account.Account) error {
 	tableName := em.app.EntityName + "_update_email"
-	query := `DELETE FROM ` + tableName + ` WHERE uuid = $1`
-	_, errDelete := db.Exec(query, request.GetUUID())
+	query := `DELETE FROM ` + tableName + ` WHERE account_uuid = $1`
+	_, errDelete := db.Exec(query, account.GetUUID())
 	if errDelete != nil {
 		return errDelete
 	}

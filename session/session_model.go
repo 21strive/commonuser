@@ -71,7 +71,7 @@ func (s *Session) IsValid() bool {
 	if s.ExpiredAt.Before(time.Now().UTC()) {
 		return false
 	}
-	if !s.Revoked {
+	if s.Revoked {
 		return false
 	}
 	return true

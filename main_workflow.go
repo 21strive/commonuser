@@ -45,11 +45,11 @@ type DeviceInfo struct {
 	UserAgent  string `json:"userAgent"`
 }
 
-type Authenticate struct {
+type NativeAuthenticate struct {
 	s *Service
 }
 
-func (au *Authenticate) ByUsername(db shared.SQLExecutor, username string, password string, deviceInfo DeviceInfo) (string, string, error) {
+func (au *NativeAuthenticate) ByUsername(db shared.SQLExecutor, username string, password string, deviceInfo DeviceInfo) (string, string, error) {
 	accountFromDB, errFindUser := au.s.accountRepository.FindByUsername(username)
 	if errFindUser != nil {
 		return "", "", errFindUser
@@ -65,7 +65,7 @@ func (au *Authenticate) ByUsername(db shared.SQLExecutor, username string, passw
 	)
 }
 
-func (au *Authenticate) ByEmail(db shared.SQLExecutor, email string, password string, deviceInfo DeviceInfo) (string, string, error) {
+func (au *NativeAuthenticate) ByEmail(db shared.SQLExecutor, email string, password string, deviceInfo DeviceInfo) (string, string, error) {
 	accountFromDB, errFindUser := au.s.accountRepository.FindByEmail(email)
 	if errFindUser != nil {
 		return "", "", errFindUser
@@ -81,8 +81,7 @@ func (au *Authenticate) ByEmail(db shared.SQLExecutor, email string, password st
 	)
 }
 
-func (au *Authenticate) Authenticate(db shared.SQLExecutor, accountFromDB *account.Account, password string, deviceId string, deviceType string, userAgent string) (string, string, error) {
-
+func (au *NativeAuthenticate) Authenticate(db shared.SQLExecutor, accountFromDB *account.Account, password string, deviceId string, deviceType string, userAgent string) (string, string, error) {
 	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(password)
 	if errVerifyPassword != nil {
 		return "", "", errVerifyPassword
@@ -118,8 +117,8 @@ func (au *Authenticate) Authenticate(db shared.SQLExecutor, accountFromDB *accou
 	return accessToken, session.RefreshToken, nil
 }
 
-func (aw *Service) Authenticate() *Authenticate {
-	return &Authenticate{s: aw}
+func (aw *Service) NativeAuthenticate() *NativeAuthenticate {
+	return &NativeAuthenticate{s: aw}
 }
 
 func (aw *Service) Register(db shared.SQLExecutor, newAccount *account.Account, requireVerification bool) (*string, error) {
@@ -347,6 +346,14 @@ func (s *Session) Refresh(db shared.SQLExecutor, account *account.Account, sessi
 	return newAccessToken, sessionFromDB.RefreshToken, nil
 }
 
+func (s *Session) SeedByAccount(accountUUID string) error {
+	return s.s.sessionRepository.SeedByAccount(accountUUID)
+}
+
+func (s *Session) PurgeInvalid(db shared.SQLExecutor) error {
+	return s.s.sessionRepository.PurgeInvalid(db)
+}
+
 func (aw *Service) Session() *Session {
 	return &Session{s: aw}
 }
@@ -392,24 +399,22 @@ func (eu *Email) RequestUpdate(
 	db shared.SQLExecutor,
 	account *account.Account,
 	newEmailAddress string,
-) (string, string, error) {
-	var resetToken string
-	var revokeToken string
+) (*update_email.UpdateEmail, error) {
 
 	requestFromDB, errFind := eu.s.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
 		if !errors.Is(errFind, update_email.TicketNotFound) {
-			return resetToken, revokeToken, errFind
+			return nil, errFind
 		}
 	}
 	if requestFromDB != nil {
 		if requestFromDB.IsExpired() {
-			errDeleteRequest := eu.s.updateEmailRepository.DeleteRequest(db, requestFromDB)
+			errDeleteRequest := eu.s.updateEmailRepository.DeleteAll(db, account)
 			if errDeleteRequest != nil {
-				return resetToken, revokeToken, errDeleteRequest
+				return nil, errDeleteRequest
 			}
 		} else {
-			return resetToken, revokeToken, nil
+			return requestFromDB, nil
 		}
 	}
 
@@ -418,21 +423,21 @@ func (eu *Email) RequestUpdate(
 	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
 	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
 	updateEmailRequest.SetExpiration()
-	resetToken, errGen := updateEmailRequest.SetToken()
+	_, errGen := updateEmailRequest.SetToken()
 	if errGen != nil {
-		return resetToken, revokeToken, errGen
+		return nil, errGen
 	}
-	revokeToken, errGen = updateEmailRequest.SetRevokeToken()
+	_, errGen = updateEmailRequest.SetRevokeToken()
 	if errGen != nil {
-		return resetToken, revokeToken, errGen
+		return nil, errGen
 	}
 
 	errCreateTicket := eu.s.updateEmailRepository.CreateRequest(db, updateEmailRequest)
 	if errCreateTicket != nil {
-		return resetToken, revokeToken, errCreateTicket
+		return nil, errCreateTicket
 	}
 
-	return resetToken, revokeToken, nil
+	return updateEmailRequest, nil
 }
 
 func (eu *Email) ValidateUpdate(
@@ -456,7 +461,7 @@ func (eu *Email) ValidateUpdate(
 	errValidate := request.Validate(token)
 	if errValidate != nil {
 		if errors.Is(errValidate, shared.RequestExpired) {
-			eu.s.updateEmailRepository.DeleteRequest(db, request)
+			eu.s.updateEmailRepository.DeleteAll(db, account)
 			return shared.RequestExpired
 		}
 		return errValidate
@@ -475,15 +480,9 @@ func (eu *Email) ValidateUpdate(
 	}
 
 	// revoke all running sessions
-	errRevoke := eu.s.sessionRepository.RevokeAllByAccount(db, account)
+	errRevoke := eu.s.sessionRepository.RevokeAll(db, account)
 	if errRevoke != nil {
 		return errRevoke
-	}
-
-	// re-seed revoked sessions to cache
-	_, errFind = eu.s.sessionRepository.FindByAccountUUID(account.GetUUID())
-	if errFind != nil {
-		return errFind
 	}
 
 	return nil
@@ -515,21 +514,22 @@ func (eu *Email) RevokeUpdate(
 		return errUpdate
 	}
 
-	errDeleteTicket := eu.s.updateEmailRepository.DeleteRequest(db, request)
+	errDeleteTicket := eu.s.updateEmailRepository.DeleteAll(db, account)
 	if errDeleteTicket != nil {
 		return errDeleteTicket
+	}
+
+	// revoke all running sessions
+	errRevoke := eu.s.sessionRepository.RevokeAll(db, account)
+	if errRevoke != nil {
+		return errRevoke
 	}
 
 	return nil
 }
 
-func (eu *Email) Delete(db shared.SQLExecutor, account *account.Account) error {
-	requestFromDB, errFind := eu.s.updateEmailRepository.FindRequest(account)
-	if errFind != nil {
-		return errFind
-	}
-
-	return eu.s.updateEmailRepository.DeleteRequest(db, requestFromDB)
+func (eu *Email) DeleteUpdateRequest(db shared.SQLExecutor, account *account.Account) error {
+	return eu.s.updateEmailRepository.DeleteAll(db, account)
 }
 
 func (aw *Service) EmailUpdate() *Email {
@@ -549,7 +549,7 @@ func (pu *Password) RequestReset(db shared.SQLExecutor, account *account.Account
 	}
 	if ticketFromDB != nil {
 		if ticketFromDB.IsExpired() {
-			errDeleteTicket := pu.s.resetPasswordRepository.Delete(db, ticketFromDB)
+			errDeleteTicket := pu.s.resetPasswordRepository.DeleteAll(db, account)
 			if errDeleteTicket != nil {
 				return nil, errDeleteTicket
 			}
@@ -581,7 +581,7 @@ func (pu *Password) ValidateReset(db shared.SQLExecutor, account *account.Accoun
 	errValidate := ticketFromDB.Validate(token)
 	if errValidate != nil {
 		if errors.Is(errValidate, shared.RequestExpired) {
-			pu.s.resetPasswordRepository.Delete(db, ticketFromDB)
+			pu.s.resetPasswordRepository.DeleteAll(db, account)
 			return shared.RequestExpired
 		}
 		return errValidate
@@ -594,21 +594,15 @@ func (pu *Password) ValidateReset(db shared.SQLExecutor, account *account.Accoun
 		return errUpdate
 	}
 
-	errUpdateTicket := pu.s.resetPasswordRepository.Delete(db, ticketFromDB)
+	errUpdateTicket := pu.s.resetPasswordRepository.DeleteAll(db, account)
 	if errUpdateTicket != nil {
 		return errUpdateTicket
 	}
 
 	// revoke all running sessions
-	errRevoke := pu.s.sessionRepository.RevokeAllByAccount(db, account)
+	errRevoke := pu.s.sessionRepository.RevokeAll(db, account)
 	if errRevoke != nil {
 		return errRevoke
-	}
-
-	// re-seed all revoked sessions
-	_, errFind = pu.s.sessionRepository.FindByAccountUUID(account.GetUUID())
-	if errFind != nil {
-		return errFind
 	}
 
 	return nil
@@ -620,12 +614,7 @@ func (pu *Password) DeleteReset(db shared.SQLExecutor, accountUUID string) error
 		return errFind
 	}
 
-	requestFromDB, errFind := pu.s.resetPasswordRepository.Find(accountFromDB)
-	if errFind != nil {
-		return errFind
-	}
-
-	return pu.s.resetPasswordRepository.Delete(db, requestFromDB)
+	return pu.s.resetPasswordRepository.DeleteAll(db, accountFromDB)
 }
 
 func (pu *Password) Update(db shared.SQLExecutor, accountUUID string, oldPassword string, newPassword string) error {
@@ -643,6 +632,13 @@ func (pu *Password) Update(db shared.SQLExecutor, accountUUID string, oldPasswor
 	}
 
 	accountFromDB.SetPassword(newPassword)
+
+	// revoke all running sessions
+	errRevoke := pu.s.sessionRepository.RevokeAll(db, accountFromDB)
+	if errRevoke != nil {
+		return errRevoke
+	}
+
 	return pu.s.accountRepository.Update(db, accountFromDB)
 }
 

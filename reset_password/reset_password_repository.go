@@ -58,10 +58,10 @@ func (ar *Repository) Find(account *account.Account) (*ResetPassword, error) {
 	return resetPasswordRequest, nil
 }
 
-func (ar *Repository) Delete(db shared.SQLExecutor, request *ResetPassword) error {
+func (ar *Repository) DeleteAll(db shared.SQLExecutor, account *account.Account) error {
 	tableName := ar.app.EntityName + "_reset_password"
-	query := "DELETE FROM " + tableName + " WHERE uuid = $1"
-	_, errDelete := db.Exec(query, request.GetUUID())
+	query := "DELETE FROM " + tableName + " WHERE account_uuid = $1"
+	_, errDelete := db.Exec(query, account.GetUUID())
 	if errDelete != nil {
 		return errDelete
 	}
