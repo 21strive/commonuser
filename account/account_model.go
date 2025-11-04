@@ -1,23 +1,12 @@
 package account
 
 import (
+	"github.com/21strive/commonuser/jwt_impl"
 	"github.com/21strive/redifu"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/matthewhartstonge/argon2"
 	"time"
 )
-
-type UserClaims struct {
-	UUID      string `json:"uuid"` // user uuid
-	RandId    string `json:"randId"`
-	Name      string `json:"name"`
-	Username  string `json:"username,omitempty"`
-	Email     string `json:"email,omitempty"`
-	Avatar    string `json:"avatar,omitempty"`
-	Verified  bool   `json:"verified"`
-	SessionID string `json:"sessionid"`
-	jwt.RegisteredClaims
-}
 
 type AssociatedAccount struct {
 	Name     string `json:"name,omitempty" db:"-"`
@@ -96,7 +85,7 @@ func (asql *Account) GenerateAccessToken(jwtSecret string, jwtTokenIssuer string
 	timeNow := time.Now().UTC()
 	expirestAt := timeNow.Add(jwtTokenLifeSpan)
 
-	userClaims := UserClaims{
+	userClaims := jwt_impl.UserClaims{
 		UUID:      asql.GetUUID(),
 		RandId:    asql.GetRandId(),
 		Name:      asql.Name,

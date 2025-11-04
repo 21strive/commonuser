@@ -118,6 +118,13 @@ func main() {
 	}
 	fmt.Println("✓ Verification table created successfully")
 
+	fmt.Printf("Creating provider table for entity: %s\n", *entityName)
+	if err := CreateProviderTableSQL(tx, *entityName); err != nil {
+		tx.Rollback()
+		log.Fatalf("Failed to create provider table: %v", err)
+	}
+	fmt.Println("✓ Provider table created successfully")
+
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		log.Fatalf("Failed to commit transaction: %v", err)
@@ -234,6 +241,28 @@ func CreateVerificationTableSQL(tx *sql.Tx, entityName string) error {
     );
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_code ON ` + tableName + `(code);`
+
+	_, err := tx.Exec(query)
+	return err
+}
+
+func CreateProviderTableSQL(tx *sql.Tx, entityName string) error {
+	tableName := entityName + "_provider"
+	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
+		uuid VARCHAR(255) PRIMARY KEY,
+		randid VARCHAR(255) UNIQUE,
+		created_at TIMESTAMP DEFAULT NOW(),
+		updated_at TIMESTAMP DEFAULT NOW(),
+		name VARCHAR(255),
+		email VARCHAR(255),
+		provider_uuid VARCHAR(255),
+		sub VARCHAR(255),
+		provider VARCHAR(255)
+    );
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_email ON ` + tableName + `(email);
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_sub ON ` + tableName + `(sub);
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_provider ON ` + tableName + `(provider);
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_provider_uuid ON ` + tableName + `(provider_uuid);`
 
 	_, err := tx.Exec(query)
 	return err

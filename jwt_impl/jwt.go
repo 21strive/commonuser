@@ -1,8 +1,7 @@
-package jwt
+package jwt_impl
 
 import (
 	"fmt"
-	"github.com/21strive/commonuser/account"
 	"github.com/21strive/commonuser/shared"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -32,13 +31,13 @@ func (jh *JWTHandler) ParseJWT(jwtToken string, expectedStruct interface{ jwt.Cl
 	}
 }
 
-func (jh *JWTHandler) ParseAccessToken(jwtToken string) (*account.UserClaims, error) {
-	userClaims, err := jh.ParseJWT(jwtToken, &account.UserClaims{})
+func (jh *JWTHandler) ParseAccessToken(jwtToken string) (*UserClaims, error) {
+	userClaims, err := jh.ParseJWT(jwtToken, &UserClaims{})
 	if err != nil {
 		return nil, err
 	}
 
-	return userClaims.(*account.UserClaims), nil
+	return userClaims.(*UserClaims), nil
 }
 
 func NewJWTHandler(jwtSecret string, jwtTokenIssuer string, jwtTokenLifeSpan int) *JWTHandler {
