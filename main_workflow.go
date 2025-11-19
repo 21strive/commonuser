@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/21strive/commonuser/account"
 	"github.com/21strive/commonuser/config"
+	"github.com/21strive/commonuser/provider"
 	"github.com/21strive/commonuser/reset_password"
 	"github.com/21strive/commonuser/session"
 	"github.com/21strive/commonuser/shared"
@@ -24,6 +25,7 @@ type Service struct {
 	verificationRepository  *verification.Repository
 	updateEmailRepository   *update_email.Repository
 	resetPasswordRepository *reset_password.Repository
+	providerRepository      *provider.Repository
 	config                  *config.App
 }
 
@@ -45,43 +47,43 @@ type DeviceInfo struct {
 	UserAgent  string `json:"userAgent"`
 }
 
-type NativeAuthenticate struct {
+type Authenticate struct {
 	s *Service
 }
 
-func (au *NativeAuthenticate) ByUsername(db shared.SQLExecutor, username string, password string, deviceInfo DeviceInfo) (string, string, error) {
+func (au *Authenticate) ByProvider(db shared.SQLExecutor, issuer string, sub string, deviceInfo DeviceInfo) (string, string, error) {
+	providerFromDB, errFind := au.s.providerRepository.Find(sub, issuer)
+	if errFind != nil {
+		return "", "", errFind
+	}
+
+	accountFromDB, errFind := au.s.accountRepository.FindByUUID(providerFromDB.AccountUUID)
+	if errFind != nil {
+		return "", "", errFind
+	}
+
+	return au.GenerateToken(db, accountFromDB, deviceInfo.DeviceId, deviceInfo.DeviceType, deviceInfo.UserAgent)
+}
+
+func (au *Authenticate) ByUsername(db shared.SQLExecutor, username string, password string, deviceInfo DeviceInfo) (string, string, error) {
 	accountFromDB, errFindUser := au.s.accountRepository.FindByUsername(username)
 	if errFindUser != nil {
 		return "", "", errFindUser
 	}
 
-	return au.Authenticate(
-		db,
-		accountFromDB,
-		password,
-		deviceInfo.DeviceId,
-		deviceInfo.DeviceType,
-		deviceInfo.UserAgent,
-	)
+	return au.AuthenticatePassword(db, accountFromDB, password, deviceInfo)
 }
 
-func (au *NativeAuthenticate) ByEmail(db shared.SQLExecutor, email string, password string, deviceInfo DeviceInfo) (string, string, error) {
+func (au *Authenticate) ByEmail(db shared.SQLExecutor, email string, password string, deviceInfo DeviceInfo) (string, string, error) {
 	accountFromDB, errFindUser := au.s.accountRepository.FindByEmail(email)
 	if errFindUser != nil {
 		return "", "", errFindUser
 	}
 
-	return au.Authenticate(
-		db,
-		accountFromDB,
-		password,
-		deviceInfo.DeviceId,
-		deviceInfo.DeviceType,
-		deviceInfo.UserAgent,
-	)
+	return au.AuthenticatePassword(db, accountFromDB, password, deviceInfo)
 }
 
-func (au *NativeAuthenticate) Authenticate(db shared.SQLExecutor, accountFromDB *account.Account, password string, deviceId string, deviceType string, userAgent string) (string, string, error) {
+func (au *Authenticate) AuthenticatePassword(db shared.SQLExecutor, accountFromDB *account.Account, password string, deviceInfo DeviceInfo) (string, string, error) {
 	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(password)
 	if errVerifyPassword != nil {
 		return "", "", errVerifyPassword
@@ -90,6 +92,10 @@ func (au *NativeAuthenticate) Authenticate(db shared.SQLExecutor, accountFromDB 
 		return "", "", shared.Unauthorized
 	}
 
+	return au.GenerateToken(db, accountFromDB, deviceInfo.DeviceId, deviceInfo.DeviceType, deviceInfo.UserAgent)
+}
+
+func (au *Authenticate) GenerateToken(db shared.SQLExecutor, accountFromDB *account.Account, deviceId string, deviceType string, userAgent string) (string, string, error) {
 	session := session.NewSession()
 
 	session.SetDeviceId(deviceId)
@@ -117,8 +123,18 @@ func (au *NativeAuthenticate) Authenticate(db shared.SQLExecutor, accountFromDB 
 	return accessToken, session.RefreshToken, nil
 }
 
-func (aw *Service) NativeAuthenticate() *NativeAuthenticate {
-	return &NativeAuthenticate{s: aw}
+func (aw *Service) Authenticate() *Authenticate {
+	return &Authenticate{s: aw}
+}
+
+func (aw *Service) RegisterWithProvider(db shared.SQLExecutor, newAccount *account.Account, newProvider *provider.Provider) error {
+	errCreateProvider := aw.providerRepository.Create(db, newProvider)
+	if errCreateProvider != nil {
+		return errCreateProvider
+	}
+
+	_, errRegister := aw.Register(db, newAccount, false)
+	return errRegister
 }
 
 func (aw *Service) Register(db shared.SQLExecutor, newAccount *account.Account, requireVerification bool) (*string, error) {
@@ -213,34 +229,44 @@ func (v *Verification) Request(db shared.SQLExecutor, accountUUID string) (*veri
 	return verificationData, nil
 }
 
-func (v *Verification) Verify(db shared.SQLExecutor, accountUUID string, code string) (*account.Account, bool, error) {
+func (v *Verification) Verify(db shared.SQLExecutor, accountUUID string, code string, sessionId string) (string, error) {
+	var newAccessToken string
 	accountFromDB, errFind := v.s.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
-		return nil, false, errFind
+		return newAccessToken, errFind
 	}
 
 	verificationFromDB, errFind := v.s.verificationRepository.FindByAccount(accountFromDB)
 	if errFind != nil {
-		return nil, false, errFind
+		return newAccessToken, errFind
 	}
 
 	isValid := verificationFromDB.Validate(code)
 	if !isValid {
-		return nil, false, verification.InvalidVerificationCode
+		return newAccessToken, verification.InvalidVerificationCode
 	}
 
 	accountFromDB.SetEmailVerified()
 	errUpdate := v.s.accountRepository.Update(db, accountFromDB)
 	if errUpdate != nil {
-		return nil, false, errUpdate
+		return newAccessToken, errUpdate
 	}
 
 	errDeleteVerification := v.s.verificationRepository.Delete(db, verificationFromDB)
 	if errDeleteVerification != nil {
-		return nil, false, errDeleteVerification
+		return newAccessToken, errDeleteVerification
 	}
 
-	return accountFromDB, true, nil
+	newAccessToken, errGenerateAccToken := accountFromDB.GenerateAccessToken(
+		v.s.config.JWTSecret,
+		v.s.config.JWTIssuer,
+		v.s.config.JWTLifespan,
+		sessionId)
+	if errGenerateAccToken != nil {
+		return newAccessToken, errGenerateAccToken
+	}
+
+	return newAccessToken, nil
 }
 
 func (v *Verification) Resend(db shared.SQLExecutor, accountUUID string) (*verification.Verification, error) {
@@ -652,6 +678,7 @@ func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Se
 	verificationManager := verification.NewRepository(readDB, app)
 	updateEmailManager := update_email.NewUpdateEmailManager(readDB, app)
 	resetPasswordManager := reset_password.NewRepository(readDB, app)
+	providerRepository := provider.NewRepository(readDB, app)
 
 	return &Service{
 		accountRepository:       accountManager,
@@ -659,6 +686,7 @@ func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Se
 		verificationRepository:  verificationManager,
 		updateEmailRepository:   updateEmailManager,
 		resetPasswordRepository: resetPasswordManager,
+		providerRepository:      providerRepository,
 		config:                  app,
 	}
 }

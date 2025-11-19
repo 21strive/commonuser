@@ -83,47 +83,32 @@ func main() {
 	}()
 
 	// Create tables within transaction
-	fmt.Printf("Creating account table for entity: %s\n", *entityName)
-	if err := CreateAccountTableSQL(tx, *entityName); err != nil {
-		tx.Rollback()
-		log.Fatalf("Failed to create account table: %v", err)
+	tables := []struct {
+		name       string
+		createFunc func(*sql.Tx, string) (bool, error)
+	}{
+		{"account", CreateAccountTableSQL},
+		{"reset password", CreateResetPasswordTableSQL},
+		{"update email", CreateUpdateEmailTableSQL},
+		{"session", CreateSessionTableSQL},
+		{"verification", CreateVerificationTableSQL},
+		{"provider", CreateProviderTableSQL},
 	}
-	fmt.Println("✓ Account table created successfully")
 
-	fmt.Printf("Creating reset password table for entity: %s\n", *entityName)
-	if err := CreateResetPasswordTableSQL(tx, *entityName); err != nil {
-		tx.Rollback()
-		log.Fatalf("Failed to create reset password table: %v", err)
-	}
-	fmt.Println("✓ Reset password table created successfully")
+	for _, table := range tables {
+		fmt.Printf("Processing %s table for entity: %s\n", table.name, *entityName)
+		created, err := table.createFunc(tx, *entityName)
+		if err != nil {
+			tx.Rollback()
+			log.Fatalf("Failed to create %s table: %v", table.name, err)
+		}
 
-	fmt.Printf("Creating update email table for entity: %s\n", *entityName)
-	if err := CreateUpdateEmailTableSQL(tx, *entityName); err != nil {
-		tx.Rollback()
-		log.Fatalf("Failed to create update email table: %v", err)
+		if created {
+			fmt.Printf("✓ %s table created successfully\n", capitalizeWords(table.name))
+		} else {
+			fmt.Printf("⚠ %s table already exists - skipping creation\n", capitalizeWords(table.name))
+		}
 	}
-	fmt.Println("✓ Update email table created successfully")
-
-	fmt.Printf("Creating session table for entity: %s\n", *entityName)
-	if err := CreateSessionTableSQL(tx, *entityName); err != nil {
-		tx.Rollback()
-		log.Fatalf("Failed to create session table: %v", err)
-	}
-	fmt.Println("✓ Session table created successfully")
-
-	fmt.Printf("Creating verification table for entity: %s\n", *entityName)
-	if err := CreateVerificationTableSQL(tx, *entityName); err != nil {
-		tx.Rollback()
-		log.Fatalf("Failed to create verification table: %v", err)
-	}
-	fmt.Println("✓ Verification table created successfully")
-
-	fmt.Printf("Creating provider table for entity: %s\n", *entityName)
-	if err := CreateProviderTableSQL(tx, *entityName); err != nil {
-		tx.Rollback()
-		log.Fatalf("Failed to create provider table: %v", err)
-	}
-	fmt.Println("✓ Provider table created successfully")
 
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
@@ -131,6 +116,16 @@ func main() {
 	}
 
 	fmt.Println("\nAll tables created successfully!")
+}
+
+func capitalizeWords(s string) string {
+	words := strings.Fields(s)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func contains(slice []string, item string) bool {
@@ -142,7 +137,7 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func CreateResetPasswordTableSQL(tx *sql.Tx, entityName string) error {
+func CreateResetPasswordTableSQL(tx *sql.Tx, entityName string) (bool, error) {
 	tableName := entityName + "_reset_password"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
 		uuid VARCHAR(255) PRIMARY KEY,
@@ -156,11 +151,16 @@ func CreateResetPasswordTableSQL(tx *sql.Tx, entityName string) error {
     
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_token ON ` + tableName + `(token);`
 
-	_, err := tx.Exec(query)
-	return err
+	result, err := tx.Exec(query)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	return rowsAffected > 0, nil
 }
 
-func CreateAccountTableSQL(tx *sql.Tx, entityName string) error {
+func CreateAccountTableSQL(tx *sql.Tx, entityName string) (bool, error) {
 	query := `CREATE TABLE IF NOT EXISTS ` + entityName + ` (
 		uuid VARCHAR(255) PRIMARY KEY,
 		randid VARCHAR(255) UNIQUE,
@@ -178,11 +178,16 @@ func CreateAccountTableSQL(tx *sql.Tx, entityName string) error {
 	CREATE INDEX IF NOT EXISTS idx_` + entityName + `_uuid ON ` + entityName + `(uuid);
     CREATE INDEX IF NOT EXISTS idx_` + entityName + `_username ON ` + entityName + `(username);`
 
-	_, err := tx.Exec(query)
-	return err
+	result, err := tx.Exec(query)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	return rowsAffected > 0, nil
 }
 
-func CreateUpdateEmailTableSQL(tx *sql.Tx, entityName string) error {
+func CreateUpdateEmailTableSQL(tx *sql.Tx, entityName string) (bool, error) {
 	tableName := entityName + "_update_email"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
 		uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -200,11 +205,16 @@ func CreateUpdateEmailTableSQL(tx *sql.Tx, entityName string) error {
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_new_email_address ON ` + tableName + `(new_email_address);`
 
-	_, err := tx.Exec(query)
-	return err
+	result, err := tx.Exec(query)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	return rowsAffected > 0, nil
 }
 
-func CreateSessionTableSQL(tx *sql.Tx, entityName string) error {
+func CreateSessionTableSQL(tx *sql.Tx, entityName string) (bool, error) {
 	tableName := entityName + "_session"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
        uuid VARCHAR(255) PRIMARY KEY,
@@ -225,11 +235,16 @@ func CreateSessionTableSQL(tx *sql.Tx, entityName string) error {
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_randid ON ` + tableName + `(randid);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_expired_at ON ` + tableName + `(expired_at);`
 
-	_, err := tx.Exec(query)
-	return err
+	result, err := tx.Exec(query)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	return rowsAffected > 0, nil
 }
 
-func CreateVerificationTableSQL(tx *sql.Tx, entityName string) error {
+func CreateVerificationTableSQL(tx *sql.Tx, entityName string) (bool, error) {
 	tableName := entityName + "_verification"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
 		uuid VARCHAR(255) PRIMARY KEY,
@@ -242,11 +257,16 @@ func CreateVerificationTableSQL(tx *sql.Tx, entityName string) error {
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_code ON ` + tableName + `(code);`
 
-	_, err := tx.Exec(query)
-	return err
+	result, err := tx.Exec(query)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	return rowsAffected > 0, nil
 }
 
-func CreateProviderTableSQL(tx *sql.Tx, entityName string) error {
+func CreateProviderTableSQL(tx *sql.Tx, entityName string) (bool, error) {
 	tableName := entityName + "_provider"
 	query := `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
 		uuid VARCHAR(255) PRIMARY KEY,
@@ -255,15 +275,20 @@ func CreateProviderTableSQL(tx *sql.Tx, entityName string) error {
 		updated_at TIMESTAMP DEFAULT NOW(),
 		name VARCHAR(255),
 		email VARCHAR(255),
-		provider_uuid VARCHAR(255),
 		sub VARCHAR(255),
-		provider VARCHAR(255)
+		issuer VARCHAR(255),
+		account_uuid VARCHAR(255)
     );
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_email ON ` + tableName + `(email);
     CREATE INDEX IF NOT EXISTS idx_` + tableName + `_sub ON ` + tableName + `(sub);
-    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_provider ON ` + tableName + `(provider);
-    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_provider_uuid ON ` + tableName + `(provider_uuid);`
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_issuer ON ` + tableName + `(issuer);
+    CREATE INDEX IF NOT EXISTS idx_` + tableName + `_account_uuid ON ` + tableName + `(account_uuid);`
 
-	_, err := tx.Exec(query)
-	return err
+	result, err := tx.Exec(query)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	return rowsAffected > 0, nil
 }

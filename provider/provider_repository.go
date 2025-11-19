@@ -13,7 +13,7 @@ type Repository struct {
 
 func (r *Repository) Create(db shared.SQLExecutor, provider *Provider) error {
 	tableName := r.app.EntityName + "_provider"
-	query := "INSERT INTO " + tableName + " (uuid, randid, created_at, updated_at, name, email, provider_uuid, sub, provider) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
+	query := "INSERT INTO " + tableName + " (uuid, randid, created_at, updated_at, name, email, sub, issuer, account_uuid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
 	_, errExec := db.Exec(
 		query,
 		provider.GetUUID(),
@@ -22,9 +22,9 @@ func (r *Repository) Create(db shared.SQLExecutor, provider *Provider) error {
 		provider.GetUpdatedAt(),
 		provider.Name,
 		provider.Email,
-		provider.Uuid,
 		provider.Sub,
-		provider.Provider,
+		provider.Issuer,
+		provider.AccountUUID,
 	)
 	if errExec != nil {
 		return errExec
@@ -36,7 +36,7 @@ func (r *Repository) Create(db shared.SQLExecutor, provider *Provider) error {
 func (r *Repository) scanProvider(scanner interface {
 	Scan(dest ...interface{}) error
 }) (*Provider, error) {
-	provider := NewProvider()
+	provider := New()
 	err := scanner.Scan(
 		&provider.UUID,
 		&provider.RandId,
@@ -44,9 +44,9 @@ func (r *Repository) scanProvider(scanner interface {
 		&provider.UpdatedAt,
 		&provider.Name,
 		&provider.Email,
-		&provider.Uuid,
 		&provider.Sub,
-		&provider.Provider,
+		&provider.Issuer,
+		&provider.AccountUUID,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -58,8 +58,8 @@ func (r *Repository) scanProvider(scanner interface {
 	return provider, nil
 }
 
-func (r *Repository) Find(sub string) (*Provider, error) {
-	row := r.findBySubStmt.QueryRow(sub)
+func (r *Repository) Find(sub string, issuer string) (*Provider, error) {
+	row := r.findBySubStmt.QueryRow(sub, issuer)
 	return r.scanProvider(row)
 }
 
@@ -76,7 +76,7 @@ func (r *Repository) Delete(db shared.SQLExecutor, provider *Provider) error {
 
 func NewRepository(readDB *sql.DB, app *config.App) *Repository {
 	tableName := app.EntityName + "_provider"
-	findBySubStmt, errPrepare := readDB.Prepare("SELECT uuid, randid, created_at, updated_at, name, email, provider_uuid, sub, provider FROM " + tableName + " WHERE sub = $1")
+	findBySubStmt, errPrepare := readDB.Prepare("SELECT uuid, randid, created_at, updated_at, name, email, sub, issuer, account_uuid FROM " + tableName + " WHERE sub = $1 AND issuer = $2")
 	if errPrepare != nil {
 		panic(errPrepare)
 	}
