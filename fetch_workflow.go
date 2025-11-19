@@ -82,12 +82,16 @@ func (af *AccountFetchers) All(sortDir string) ([]account.Account, error) {
 	return accounts, nil
 }
 
-func (f *Fetchers) FetchAccount() *AccountFetchers {
+func (f *Fetchers) Account() *AccountFetchers {
 	return &AccountFetchers{f: f}
 }
 
-func (f *Fetchers) PingSession(sessionRandId string) (*session.Session, error) {
-	sessionFromCache, err := f.sessionFetcher.FetchByRandId(sessionRandId)
+type SessionFetchers struct {
+	f *Fetchers
+}
+
+func (sf *SessionFetchers) Ping(sessionRandId string) (*session.Session, error) {
+	sessionFromCache, err := sf.f.sessionFetcher.FetchByRandId(sessionRandId)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +103,30 @@ func (f *Fetchers) PingSession(sessionRandId string) (*session.Session, error) {
 	}
 
 	return sessionFromCache, nil
+}
+
+func (sf *SessionFetchers) FetchByAccount(accountRandId string) ([]*session.Session, error) {
+	isBlank, errCheck := sf.f.sessionFetcher.IsBlankPage(accountRandId)
+	if errCheck != nil {
+		return nil, errCheck
+	}
+	if isBlank {
+		return nil, nil
+	}
+
+	sessions, err := sf.f.sessionFetcher.FetchByAccount(accountRandId)
+	if err != nil {
+		return nil, err
+	}
+	if len(sessions) == 0 {
+		return nil, session.SeedRequired
+	}
+
+	return sessions, nil
+}
+
+func (f *Fetchers) Session() *SessionFetchers {
+	return &SessionFetchers{f: f}
 }
 
 func NewFetchers(redisClient redis.UniversalClient, app *config.App) *Fetchers {

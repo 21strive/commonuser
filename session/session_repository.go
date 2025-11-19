@@ -11,11 +11,14 @@ import (
 )
 
 type Repository struct {
-	base                  *redifu.Base[*Session]
-	entityName            string
-	tableName             string
-	findByRandIdStmt      *sql.Stmt
-	findByAccountUUIDStmt *sql.Stmt
+	base                   *redifu.Base[*Session]
+	sessionByAccount       *redifu.Sorted[*Session]
+	sessionByAccountSeeder *redifu.SortedSeeder[*Session]
+	entityName             string
+	tableName              string
+	findByRandIdStmt       *sql.Stmt
+	findByUUIDStmt         *sql.Stmt
+	findByAccountUUIDStmt  *sql.Stmt
 }
 
 func (sm *Repository) GetBase() *redifu.Base[*Session] {
@@ -100,8 +103,36 @@ func (sm *Repository) scanSession(scanner interface {
 	return session, nil
 }
 
+func (sm *Repository) SessionRowsScanner(rows *sql.Rows) (*Session, error) {
+	session := NewSession()
+	err := rows.Scan(
+		&session.UUID,
+		&session.RandId,
+		&session.CreatedAt,
+		&session.UpdatedAt,
+		&session.LastActiveAt,
+		&session.AccountUUID,
+		&session.DeviceId,
+		&session.DeviceType,
+		&session.UserAgent,
+		&session.RefreshToken,
+		&session.ExpiredAt,
+		&session.Revoked,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
+
 func (sm *Repository) FindByRandId(randId string) (*Session, error) {
 	row := sm.findByRandIdStmt.QueryRow(randId)
+	return sm.scanSession(row)
+}
+
+func (sm *Repository) FindByUUID(uuid string) (*Session, error) {
+	row := sm.findByUUIDStmt.QueryRow(uuid)
 	return sm.scanSession(row)
 }
 
@@ -114,44 +145,10 @@ func (sm *Repository) SeedByRandId(randId string) error {
 	return sm.base.Set(sessionFromDB, randId)
 }
 
-func (sm *Repository) FindByAccountUUID(accountUUID string) ([]Session, error) {
-	rows, err := sm.findByAccountUUIDStmt.Query(accountUUID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var sessions []Session
-	for rows.Next() {
-
-		session, errScan := sm.scanSession(rows)
-		if errScan != nil {
-			return nil, errScan
-		}
-		sessions = append(sessions, *session)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return sessions, nil
-}
-
-func (sm *Repository) SeedByAccount(accountUUID string) error {
-	sessionsFromDB, errFind := sm.FindByAccountUUID(accountUUID)
-	if errFind != nil {
-		return errFind
-	}
-
-	for _, sessionFromDB := range sessionsFromDB {
-		err := sm.base.Set(&sessionFromDB)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+func (sm *Repository) SeedByAccount(account *account.Account) error {
+	tableName := sm.entityName + "_session"
+	query := "SELECT * FROM " + tableName + " WHERE account_uuid = $1"
+	return sm.sessionByAccountSeeder.Seed(query, sm.SessionRowsScanner, []interface{}{account.GetUUID()}, []string{account.GetRandId()})
 }
 
 func (sm *Repository) RevokeAll(db shared.SQLExecutor, account *account.Account) error {
@@ -178,23 +175,27 @@ func (sm *Repository) PurgeInvalid(db shared.SQLExecutor) error {
 
 func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App) *Repository {
 	tableName := app.EntityName + "_session"
-
 	findByRandIdStmt, errPrepare := readDB.Prepare(`SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, 
        				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE randid = $1`)
-	if errPrepare != nil {
-		panic(errPrepare)
-	}
 	findManyByAccountStmt, errPrepare := readDB.Prepare(`SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, 
        				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE account_uuid = $1`)
+	findByUUIDStmt, errPrepare := readDB.Prepare(`SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, 
+       				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE uuid = $1`)
 	if errPrepare != nil {
 		panic(errPrepare)
 	}
 
 	base := redifu.NewBase[*Session](redis, app.EntityName+":session:%s", app.TokenLifespan)
+	sortedSession := redifu.NewSorted[*Session](redis, base, app.EntityName+":session:account:%s", app.PaginationAge)
+	sortedSessionSeeder := redifu.NewSortedSeeder[*Session](readDB, base, sortedSession)
+
 	return &Repository{
-		base:                  base,
-		entityName:            app.EntityName,
-		findByRandIdStmt:      findByRandIdStmt,
-		findByAccountUUIDStmt: findManyByAccountStmt,
+		base:                   base,
+		sessionByAccount:       sortedSession,
+		sessionByAccountSeeder: sortedSessionSeeder,
+		entityName:             app.EntityName,
+		findByRandIdStmt:       findByRandIdStmt,
+		findByUUIDStmt:         findByUUIDStmt,
+		findByAccountUUIDStmt:  findManyByAccountStmt,
 	}
 }

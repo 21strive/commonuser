@@ -97,7 +97,6 @@ func (au *Authenticate) AuthenticatePassword(db shared.SQLExecutor, accountFromD
 
 func (au *Authenticate) GenerateToken(db shared.SQLExecutor, accountFromDB *account.Account, deviceId string, deviceType string, userAgent string) (string, string, error) {
 	session := session.NewSession()
-
 	session.SetDeviceId(deviceId)
 	session.SetDeviceType(deviceType)
 	session.SetUserAgent(userAgent)
@@ -335,8 +334,8 @@ func (s *Session) Ping(db shared.SQLExecutor, sessionRandId string) error {
 	return s.s.sessionRepository.Update(db, sessionFromDB)
 }
 
-func (s *Session) Revoke(db shared.SQLExecutor, sessionRandId string) error {
-	session, errFind := s.s.sessionRepository.FindByRandId(sessionRandId)
+func (s *Session) Revoke(db shared.SQLExecutor, sessionUUID string) error {
+	session, errFind := s.s.sessionRepository.FindByUUID(sessionUUID)
 	if errFind != nil {
 		return errFind
 	}
@@ -372,8 +371,8 @@ func (s *Session) Refresh(db shared.SQLExecutor, account *account.Account, sessi
 	return newAccessToken, sessionFromDB.RefreshToken, nil
 }
 
-func (s *Session) SeedByAccount(accountUUID string) error {
-	return s.s.sessionRepository.SeedByAccount(accountUUID)
+func (s *Session) SeedByAccount(account *account.Account) error {
+	return s.s.sessionRepository.SeedByAccount(account)
 }
 
 func (s *Session) PurgeInvalid(db shared.SQLExecutor) error {
