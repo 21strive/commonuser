@@ -1,0 +1,85 @@
+package repository
+
+import (
+	"database/sql"
+	"github.com/21strive/commonuser/config"
+	"github.com/21strive/commonuser/internal/database"
+	"github.com/21strive/commonuser/internal/model"
+	"github.com/21strive/commonuser/reset_password"
+)
+
+type ResetPasswordRepository struct {
+	app               *config.App
+	findByAccountStmt *sql.Stmt
+}
+
+func (ar *ResetPasswordRepository) Create(db database.SQLExecutor, request *model.ResetPassword) error {
+	tableName := ar.app.EntityName + "_reset_password"
+	query := `INSERT INTO ` + tableName + ` (
+		uuid, 
+		randid, 
+		created_at, 
+		updated_at, 
+		account_uuid, 
+		token, 
+		expired_at
+	) VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	_, errInsert := db.Exec(
+		query,
+		request.GetUUID(),
+		request.GetRandId(),
+		request.GetCreatedAt(),
+		request.GetUpdatedAt(),
+		request.AccountUUID,
+		request.Token,
+		request.ExpiredAt)
+
+	return errInsert
+}
+
+func (ar *ResetPasswordRepository) Find(account *model.Account) (*model.ResetPassword, error) {
+	row := ar.findByAccountStmt.QueryRow(account.GetUUID())
+	resetPasswordRequest := model.New()
+	err := row.Scan(
+		&resetPasswordRequest.UUID,
+		&resetPasswordRequest.RandId,
+		&resetPasswordRequest.CreatedAt,
+		&resetPasswordRequest.UpdatedAt,
+		&resetPasswordRequest.AccountUUID,
+		&resetPasswordRequest.Token,
+		&resetPasswordRequest.ExpiredAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, reset_password.TicketNotFound
+		}
+		return nil, err
+	}
+
+	return resetPasswordRequest, nil
+}
+
+func (ar *ResetPasswordRepository) DeleteAll(db database.SQLExecutor, account *model.Account) error {
+	tableName := ar.app.EntityName + "_reset_password"
+	query := "DELETE FROM " + tableName + " WHERE account_uuid = $1"
+	_, errDelete := db.Exec(query, account.GetUUID())
+	if errDelete != nil {
+		return errDelete
+	}
+	return nil
+}
+
+func NewRepository(readDB *sql.DB, app *config.App) *ResetPasswordRepository {
+	tableName := app.EntityName + "_reset_password"
+
+	// always find the most recent ticket
+	findByAccountStmt, errPrepare := readDB.Prepare("SELECT * FROM " + tableName + " WHERE account_uuid = $1 ORDER BY created_at DESC LIMIT 1")
+	if errPrepare != nil {
+		panic(errPrepare)
+	}
+
+	return &ResetPasswordRepository{
+		findByAccountStmt: findByAccountStmt,
+		app:               app,
+	}
+}

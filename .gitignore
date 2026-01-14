@@ -1,4 +1,4 @@
 .DS_Store
 .vscode
 .idea
-migrate/bin/
+cmd/migrate/bin/
