@@ -114,7 +114,7 @@ func (asql *Account) GenerateAccessToken(jwtSecret string, jwtTokenIssuer string
 	return tokenString, nil
 }
 
-func New() *Account {
+func NewAccount() *Account {
 	account := &Account{
 		Base: Base{},
 	}

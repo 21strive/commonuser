@@ -2,11 +2,13 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
-	verification2 "github.com/21strive/commonuser/verification"
 )
+
+var VerificationNotFound = errors.New("Verification not found")
 
 type VerificationRepository struct {
 	app               *config.App
@@ -66,7 +68,7 @@ func (r *VerificationRepository) FindByAccount(account *model.Account) (*model.V
 }
 
 func VerificationRowScanner(row *sql.Row) (*model.Verification, error) {
-	verification := model.New()
+	verification := model.NewVerification()
 	err := row.Scan(
 		&verification.UUID,
 		&verification.RandId,
@@ -77,7 +79,7 @@ func VerificationRowScanner(row *sql.Row) (*model.Verification, error) {
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, verification2.VerificationNotFound
+			return nil, VerificationNotFound
 		}
 
 		return nil, err

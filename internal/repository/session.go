@@ -1,7 +1,9 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
@@ -10,22 +12,22 @@ import (
 	"time"
 )
 
+var SessionNotFound = errors.New("session not found")
+
 type SessionRepository struct {
-	base                   *redifu.Base[*model.Session]
-	sessionByAccount       *redifu.Sorted[*model.Session]
-	sessionByAccountSeeder *redifu.SortedSeeder[*model.Session]
-	entityName             string
-	tableName              string
-	findByRandIdStmt       *sql.Stmt
-	findByUUIDStmt         *sql.Stmt
-	findByAccountUUIDStmt  *sql.Stmt
+	base                  *redifu.Base[*model.Session]
+	entityName            string
+	tableName             string
+	findByRandIdStmt      *sql.Stmt
+	findByUUIDStmt        *sql.Stmt
+	findByAccountUUIDStmt *sql.Stmt
 }
 
 func (sm *SessionRepository) GetBase() *redifu.Base[*model.Session] {
 	return sm.base
 }
 
-func (sm *SessionRepository) Create(db database.SQLExecutor, session *model.Session) error {
+func (sm *SessionRepository) Create(ctx context.Context, db database.SQLExecutor, session *model.Session) error {
 	tableName := sm.entityName + "_session"
 	query := `INSERT INTO ` + tableName + ` (
 		uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, user_agent, 
@@ -47,10 +49,10 @@ func (sm *SessionRepository) Create(db database.SQLExecutor, session *model.Sess
 		return err
 	}
 
-	return sm.base.Set(session)
+	return sm.base.Upsert(ctx, session)
 }
 
-func (sm *SessionRepository) Update(db database.SQLExecutor, session *model.Session) error {
+func (sm *SessionRepository) Update(ctx context.Context, db database.SQLExecutor, session *model.Session) error {
 	session.SetUpdatedAt(time.Now().UTC())
 	tableName := sm.entityName + "_session"
 	query := `UPDATE ` + tableName + ` SET updated_at = $1, last_active_at = $2, 
@@ -67,10 +69,10 @@ func (sm *SessionRepository) Update(db database.SQLExecutor, session *model.Sess
 		return err
 	}
 
-	return sm.base.Set(session)
+	return sm.base.Upsert(ctx, session)
 }
 
-func (sm *SessionRepository) scanSession(scanner interface {
+func (sm *SessionRepository) scanSession(ctx context.Context, scanner interface {
 	Scan(dest ...interface{}) error
 }) (*model.Session, error) {
 	session := model.NewSession()
@@ -90,12 +92,12 @@ func (sm *SessionRepository) scanSession(scanner interface {
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, session.SessionNotFound
+			return nil, SessionNotFound
 		}
 		return nil, err
 	}
 
-	err = sm.base.Set(session)
+	err = sm.base.Upsert(ctx, session)
 	if err != nil {
 		return nil, err
 	}
@@ -126,29 +128,23 @@ func (sm *SessionRepository) SessionRowsScanner(rows *sql.Rows) (*model.Session,
 	return session, nil
 }
 
-func (sm *SessionRepository) FindByRandId(randId string) (*model.Session, error) {
+func (sm *SessionRepository) FindByRandId(ctx context.Context, randId string) (*model.Session, error) {
 	row := sm.findByRandIdStmt.QueryRow(randId)
-	return sm.scanSession(row)
+	return sm.scanSession(ctx, row)
 }
 
-func (sm *SessionRepository) FindByUUID(uuid string) (*model.Session, error) {
+func (sm *SessionRepository) FindByUUID(ctx context.Context, uuid string) (*model.Session, error) {
 	row := sm.findByUUIDStmt.QueryRow(uuid)
-	return sm.scanSession(row)
+	return sm.scanSession(ctx, row)
 }
 
-func (sm *SessionRepository) SeedByRandId(randId string) error {
-	sessionFromDB, errFind := sm.FindByRandId(randId)
+func (sm *SessionRepository) SeedByRandId(ctx context.Context, randId string) error {
+	sessionFromDB, errFind := sm.FindByRandId(ctx, randId)
 	if errFind != nil {
 		return errFind
 	}
 
-	return sm.base.Set(sessionFromDB, randId)
-}
-
-func (sm *SessionRepository) SeedByAccount(account *model.Account) error {
-	tableName := sm.entityName + "_session"
-	query := "SELECT * FROM " + tableName + " WHERE account_uuid = $1"
-	return sm.sessionByAccountSeeder.Seed(query, sm.SessionRowsScanner, []interface{}{account.GetUUID()}, []string{account.GetRandId()})
+	return sm.base.Upsert(ctx, sessionFromDB, randId)
 }
 
 func (sm *SessionRepository) RevokeAll(db database.SQLExecutor, account *model.Account) error {
@@ -173,7 +169,7 @@ func (sm *SessionRepository) PurgeInvalid(db database.SQLExecutor) error {
 	return nil
 }
 
-func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App) *SessionRepository {
+func NewSessionRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App) *SessionRepository {
 	tableName := app.EntityName + "_session"
 	findByRandIdStmt, errPrepare := readDB.Prepare(`SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, 
        				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE randid = $1`)
@@ -186,16 +182,12 @@ func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App)
 	}
 
 	base := redifu.NewBase[*model.Session](redis, app.EntityName+":session:%s", app.TokenLifespan)
-	sortedSession := redifu.NewSorted[*model.Session](redis, base, app.EntityName+":session:account:%s", app.PaginationAge)
-	sortedSessionSeeder := redifu.NewSortedSeeder[*model.Session](readDB, base, sortedSession)
 
 	return &SessionRepository{
-		base:                   base,
-		sessionByAccount:       sortedSession,
-		sessionByAccountSeeder: sortedSessionSeeder,
-		entityName:             app.EntityName,
-		findByRandIdStmt:       findByRandIdStmt,
-		findByUUIDStmt:         findByUUIDStmt,
-		findByAccountUUIDStmt:  findManyByAccountStmt,
+		base:                  base,
+		entityName:            app.EntityName,
+		findByRandIdStmt:      findByRandIdStmt,
+		findByUUIDStmt:        findByUUIDStmt,
+		findByAccountUUIDStmt: findManyByAccountStmt,
 	}
 }

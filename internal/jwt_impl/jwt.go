@@ -1,10 +1,12 @@
 package jwt_impl
 
 import (
+	"errors"
 	"fmt"
-	"github.com/21strive/commonuser/internal/errs"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+var TokenUnauthorized = errors.New("unauthorized token")
 
 type JWTHandler struct {
 	jwtSecret        string
@@ -27,7 +29,7 @@ func (jh *JWTHandler) ParseJWT(jwtToken string, expectedStruct interface{ jwt.Cl
 	if claims, ok := claimedToken.Claims.(interface{ jwt.Claims }); ok && claimedToken.Valid {
 		return claims, nil
 	} else {
-		return nil, errs.Unauthorized
+		return nil, TokenUnauthorized
 	}
 }
 

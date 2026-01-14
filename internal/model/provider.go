@@ -36,7 +36,7 @@ func (p *Provider) SetAccount(account *Account) {
 	p.AccountUUID = account.UUID
 }
 
-func New() *Provider {
+func NewProvider() *Provider {
 	provider := &Provider{}
 	redifu.InitRecord(provider)
 	return provider

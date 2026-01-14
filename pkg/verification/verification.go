@@ -31,7 +31,7 @@ func (v *VerificationOps) Request(db database.SQLExecutor, accountUUID string) (
 		return verificationFromDB, nil
 	}
 
-	verificationData := model.New()
+	verificationData := model.NewAccount()
 	verificationData.SetAccount(accountFromDB)
 	verificationData.SetCode()
 	errCreateVerification := v.s.verificationRepository.Create(db, verificationData)
@@ -92,7 +92,7 @@ func (v *VerificationOps) Resend(db database.SQLExecutor, accountUUID string) (*
 	verificationData, errFind = v.s.verificationRepository.FindByAccount(accountFromDB)
 	if errFind != nil {
 		if errFind == verification.VerificationNotFound {
-			verificationData = model.New()
+			verificationData = model.NewAccount()
 			verificationData.SetAccount(accountFromDB)
 			verificationData.SetCode()
 			errCreateVerification := v.s.verificationRepository.Create(db, verificationData)

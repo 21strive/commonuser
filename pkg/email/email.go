@@ -34,7 +34,7 @@ func (e *EmailOps) RequestUpdate(
 		}
 	}
 
-	updateEmailRequest := model.New()
+	updateEmailRequest := model.NewAccount()
 	updateEmailRequest.SetAccount(account)
 	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
 	updateEmailRequest.SetNewEmailAddress(newEmailAddress)

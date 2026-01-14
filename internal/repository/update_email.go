@@ -2,11 +2,14 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
-	"github.com/21strive/commonuser/update_email"
 )
+
+var UpdateEmailTicketNotFound = errors.New("Update email ticket not found")
+var InvalidUpdateEmailToken = errors.New("Invalid token")
 
 type UpdateEmailRepository struct {
 	app               *config.App
@@ -61,7 +64,7 @@ func (em *UpdateEmailRepository) UpdateRequest(db database.SQLExecutor, request 
 
 func (em *UpdateEmailRepository) FindRequest(account *model.Account) (*model.UpdateEmail, error) {
 	row := em.findByAccountStmt.QueryRow(account.GetUUID())
-	updateEmailRequest := model.New()
+	updateEmailRequest := model.NewUpdateEmailRequest()
 	err := row.Scan(
 		&updateEmailRequest.UUID,
 		&updateEmailRequest.RandId,
@@ -77,7 +80,7 @@ func (em *UpdateEmailRepository) FindRequest(account *model.Account) (*model.Upd
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, update_email.TicketNotFound
+			return nil, UpdateEmailTicketNotFound
 		}
 		return nil, err
 	}

@@ -1,13 +1,15 @@
 package model
 
 import (
-	"github.com/21strive/commonuser/internal/constant"
-	"github.com/21strive/commonuser/update_email"
+	"errors"
 	"github.com/21strive/item"
 	"github.com/21strive/redifu"
 	"github.com/matthewhartstonge/argon2"
 	"time"
 )
+
+var RequestExpired = errors.New("email update request has expired")
+var InvalidEmailChangeToken = errors.New("invalid email change verification token")
 
 type UpdateEmail struct {
 	*redifu.Record       `bson:",inline" json:",inline"`
@@ -66,7 +68,7 @@ func (ue *UpdateEmail) SetProcessed() {
 func (ue *UpdateEmail) Validate(token string) error {
 	time := time.Now().UTC()
 	if time.After(ue.ExpiredAt) {
-		return constant.RequestExpired
+		return RequestExpired
 	}
 
 	match, err := argon2.VerifyEncoded([]byte(token), []byte(ue.Token))
@@ -74,7 +76,7 @@ func (ue *UpdateEmail) Validate(token string) error {
 		return err
 	}
 	if !match {
-		return update_email.InvalidToken
+		return InvalidEmailChangeToken
 	}
 
 	return nil
@@ -86,7 +88,7 @@ func (ue *UpdateEmail) ValidateRevoke(token string) error {
 		return err
 	}
 	if !match {
-		return update_email.InvalidToken
+		return InvalidEmailChangeToken
 	}
 
 	return nil
@@ -96,7 +98,7 @@ func (ue *UpdateEmail) IsExpired() bool {
 	return time.Now().UTC().After(ue.ExpiredAt)
 }
 
-func New() *UpdateEmail {
+func NewUpdateEmailRequest() *UpdateEmail {
 	ue := &UpdateEmail{}
 	redifu.InitRecord(ue)
 

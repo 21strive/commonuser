@@ -38,7 +38,7 @@ func (v *Verification) Validate(code string) bool {
 	return stringifiedHash == v.Code
 }
 
-func New() *Verification {
+func NewVerification() *Verification {
 	verification := &Verification{}
 	redifu.InitRecord(verification)
 	return verification

@@ -2,11 +2,13 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
-	"github.com/21strive/commonuser/reset_password"
 )
+
+var ResetPasswordTicketNotFound = errors.New("Reset password ticket not found")
 
 type ResetPasswordRepository struct {
 	app               *config.App
@@ -39,7 +41,7 @@ func (ar *ResetPasswordRepository) Create(db database.SQLExecutor, request *mode
 
 func (ar *ResetPasswordRepository) Find(account *model.Account) (*model.ResetPassword, error) {
 	row := ar.findByAccountStmt.QueryRow(account.GetUUID())
-	resetPasswordRequest := model.New()
+	resetPasswordRequest := model.NewResetPasswordRequest()
 	err := row.Scan(
 		&resetPasswordRequest.UUID,
 		&resetPasswordRequest.RandId,
@@ -51,7 +53,7 @@ func (ar *ResetPasswordRepository) Find(account *model.Account) (*model.ResetPas
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, reset_password.TicketNotFound
+			return nil, ResetPasswordTicketNotFound
 		}
 		return nil, err
 	}
@@ -69,7 +71,7 @@ func (ar *ResetPasswordRepository) DeleteAll(db database.SQLExecutor, account *m
 	return nil
 }
 
-func NewRepository(readDB *sql.DB, app *config.App) *ResetPasswordRepository {
+func NewResetPasswordRepository(readDB *sql.DB, app *config.App) *ResetPasswordRepository {
 	tableName := app.EntityName + "_reset_password"
 
 	// always find the most recent ticket

@@ -30,7 +30,7 @@ func (pu *PasswordOps) RequestReset(db database.SQLExecutor, account *model.Acco
 		}
 	}
 
-	newResetPasswordTicket := model.New()
+	newResetPasswordTicket := model.NewAccount()
 	newResetPasswordTicket.SetAccount(account)
 	newResetPasswordTicket.SetToken()
 	if expiration != nil {

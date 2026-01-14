@@ -82,12 +82,12 @@ func (s *Service) Password() *password.Operations {
 }
 
 func New(writeDB *sql.DB, readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Service {
-	accountManager := repository.NewRepository(readDB, redisClient, app)
-	sessionManager := repository.NewRepository(readDB, redisClient, app)
-	verificationManager := repository.NewRepository(readDB, app)
+	accountManager := repository.NewAccountRepository(readDB, redisClient, app)
+	sessionManager := repository.NewAccountRepository(readDB, redisClient, app)
+	verificationManager := repository.NewAccountRepository(readDB, app)
 	updateEmailManager := repository.NewUpdateEmailManager(readDB, app)
-	resetPasswordManager := repository.NewRepository(readDB, app)
-	providerRepository := repository.NewRepository(readDB, app)
+	resetPasswordManager := repository.NewAccountRepository(readDB, app)
+	providerRepository := repository.NewAccountRepository(readDB, app)
 
 	return &Service{
 		accountRepository:       accountManager,

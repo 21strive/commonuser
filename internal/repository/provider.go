@@ -37,7 +37,7 @@ func (r *ProviderRepository) Create(db database.SQLExecutor, provider *model.Pro
 func (r *ProviderRepository) scanProvider(scanner interface {
 	Scan(dest ...interface{}) error
 }) (*model.Provider, error) {
-	provider := model.New()
+	provider := model.NewProvider()
 	err := scanner.Scan(
 		&provider.UUID,
 		&provider.RandId,
@@ -75,7 +75,7 @@ func (r *ProviderRepository) Delete(db database.SQLExecutor, provider *model.Pro
 	return nil
 }
 
-func NewRepository(readDB *sql.DB, app *config.App) *ProviderRepository {
+func NewProviderRepository(readDB *sql.DB, app *config.App) *ProviderRepository {
 	tableName := app.EntityName + "_provider"
 	findBySubStmt, errPrepare := readDB.Prepare("SELECT uuid, randid, created_at, updated_at, name, email, sub, issuer, account_uuid FROM " + tableName + " WHERE sub = $1 AND issuer = $2")
 	if errPrepare != nil {

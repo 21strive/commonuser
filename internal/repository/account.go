@@ -1,9 +1,9 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"errors"
-	account2 "github.com/21strive/commonuser/account"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
@@ -12,33 +12,33 @@ import (
 )
 
 // key := asql.entityName + ":username:" + account.Username
+var NotFound = errors.New("account not found!")
+var SeedRequired = errors.New("seed required!")
 
 type AccountRepository struct {
-	redis               redis.UniversalClient
-	base                *redifu.Base[*model.Account]
-	baseReference       *redifu.Base[*model.AccountReference]
-	sortedAccount       *redifu.Sorted[*model.Account]
-	sortedAccountSeeder *redifu.SortedSeeder[*model.Account]
-	findByUsernameStmt  *sql.Stmt
-	findByRandIdStmt    *sql.Stmt
-	findByEmailStmt     *sql.Stmt
-	findByUUIDStmt      *sql.Stmt
-	app                 *config.App
+	redis              redis.UniversalClient
+	base               *redifu.Base[*model.Account]
+	baseReference      *redifu.Base[*model.AccountReference]
+	findByUsernameStmt *sql.Stmt
+	findByRandIdStmt   *sql.Stmt
+	findByEmailStmt    *sql.Stmt
+	findByUUIDStmt     *sql.Stmt
+	app                *config.App
 }
 
-func (asql *AccountRepository) GetBase() *redifu.Base[*model.Account] {
-	return asql.base
+func (ar *AccountRepository) GetBase() *redifu.Base[*model.Account] {
+	return ar.base
 }
 
-func (asql *AccountRepository) Close() {
-	asql.findByUsernameStmt.Close()
-	asql.findByRandIdStmt.Close()
-	asql.findByEmailStmt.Close()
-	asql.findByUUIDStmt.Close()
+func (ar *AccountRepository) Close() {
+	ar.findByUsernameStmt.Close()
+	ar.findByRandIdStmt.Close()
+	ar.findByEmailStmt.Close()
+	ar.findByUUIDStmt.Close()
 }
 
-func (asql *AccountRepository) Create(db database.SQLExecutor, account *model.Account) error {
-	query := "INSERT INTO " + asql.app.EntityName + ` (
+func (ar *AccountRepository) Create(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
+	query := "INSERT INTO " + ar.app.EntityName + ` (
 		uuid, 
 		randid, 
 		created_at, 
@@ -66,26 +66,28 @@ func (asql *AccountRepository) Create(db database.SQLExecutor, account *model.Ac
 		return errInsert
 	}
 
-	errSetAcc := asql.base.Set(account)
+	pipe := ar.redis.Pipeline()
+	errSetAcc := ar.base.Set(ctx, pipe, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSetReference := asql.baseReference.Set(accountReference, account.Username)
+	errSetReference := ar.baseReference.Set(ctx, pipe, accountReference, account.Username)
 	if errSetReference != nil {
 		return errSetReference
 	}
 
-	asql.baseReference.DelBlank(account.Username)
-	asql.base.DelBlank(account.GetRandId())
-	asql.sortedAccount.AddItem(account, nil)
-	return nil
+	ar.baseReference.DelBlank(ctx, pipe, account.Username)
+	ar.base.DelBlank(ctx, pipe, account.GetRandId())
+
+	_, errExec := pipe.Exec(ctx)
+	return errExec
 }
 
-func (asql *AccountRepository) Update(db database.SQLExecutor, account *model.Account) error {
-	query := "UPDATE " + asql.app.EntityName +
+func (ar *AccountRepository) Update(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
+	query := "UPDATE " + ar.app.EntityName +
 		" SET updated_at = $1, name = $2, username = $3, password = $4, email = $5, avatar = $6, email_verified = $7 WHERE uuid = $8"
 	_, errUpdate := db.Exec(
 		query,
@@ -101,7 +103,7 @@ func (asql *AccountRepository) Update(db database.SQLExecutor, account *model.Ac
 		return errUpdate
 	}
 
-	errSetAcc := asql.base.Set(account)
+	errSetAcc := ar.base.Upsert(ctx, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
@@ -109,41 +111,45 @@ func (asql *AccountRepository) Update(db database.SQLExecutor, account *model.Ac
 	return nil
 }
 
-func (asql *AccountRepository) UpdateReference(account *model.Account, oldUsername string, newUsername string) error {
-	ref, errGet := asql.baseReference.Get(oldUsername)
+func (ar *AccountRepository) UpdateReference(ctx context.Context, account *model.Account, oldUsername string, newUsername string) error {
+	ref, errGet := ar.baseReference.Get(ctx, oldUsername)
 	if errGet != nil {
 		return errGet
 	}
 
-	err := asql.baseReference.Del(ref)
+	pipe := ar.redis.Pipeline()
+	err := ar.baseReference.Del(ctx, pipe, ref)
 	if err != nil {
 		return err
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSet := asql.baseReference.Set(accountReference, newUsername)
+	errSet := ar.baseReference.Set(ctx, pipe, accountReference, newUsername)
 	if errSet != nil {
 		return errSet
 	}
 
-	return nil
+	_, errExec := pipe.Exec(ctx)
+	return errExec
 }
 
-func (asql *AccountRepository) Delete(db database.SQLExecutor, account *model.Account) error {
-	query := "DELETE FROM " + asql.app.EntityName + " WHERE uuid = $1"
+func (ar *AccountRepository) Delete(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
+	query := "DELETE FROM " + ar.app.EntityName + " WHERE uuid = $1"
 	_, errDelete := db.Exec(query, account.GetUUID())
 	if errDelete != nil {
 		return errDelete
 	}
 
-	errDelAcc := asql.base.Del(account)
+	pipe := ar.redis.Pipeline()
+
+	errDelAcc := ar.base.Del(ctx, pipe, account)
 	if errDelAcc != nil {
 		return errDelAcc
 	}
 
 	referenceExists := true
-	ref, errGet := asql.baseReference.Get(account.Username)
+	ref, errGet := ar.baseReference.Get(ctx, account.Username)
 	if errGet != nil {
 		if errGet == redis.Nil {
 			referenceExists = false
@@ -152,82 +158,59 @@ func (asql *AccountRepository) Delete(db database.SQLExecutor, account *model.Ac
 		}
 	}
 	if referenceExists {
-		err := asql.baseReference.Del(ref)
+		err := ar.baseReference.Del(ctx, pipe, ref)
 		if err != nil {
 			return err
 		}
 	}
 
-	asql.sortedAccount.RemoveItem(account, nil)
 	return nil
 }
 
-func (asql *AccountRepository) SeedAllAccount() error {
-	query := "SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, email_verified FROM " + asql.app.EntityName
-	return asql.sortedAccountSeeder.Seed(query, accountRowsScanner, nil, nil)
+func (ar *AccountRepository) FindByUsername(username string) (*model.Account, error) {
+	return AccountRowScanner(ar.findByUsernameStmt.QueryRow(username))
 }
 
-func accountRowsScanner(rows *sql.Rows) (*model.Account, error) {
-	account := model.New()
-	err := rows.Scan(
-		&account.UUID,
-		&account.RandId,
-		&account.CreatedAt,
-		&account.UpdatedAt,
-		&account.Base.Name,
-		&account.Base.Username,
-		&account.Base.Password,
-		&account.Base.Email,
-		&account.Base.Avatar,
-	)
-	return account, err
-}
-
-func (asql *AccountRepository) FindByUsername(username string) (*model.Account, error) {
-	return AccountRowScanner(asql.findByUsernameStmt.QueryRow(username))
-}
-
-func (asql *AccountRepository) SeedByUsername(username string) error {
-	account, err := asql.FindByUsername(username)
+func (ar *AccountRepository) SeedByUsername(ctx context.Context, username string) error {
+	account, err := ar.FindByUsername(username)
 	if err != nil {
 		return err
 	}
 	if account == nil {
-		errSetBlank := asql.baseReference.SetBlank(username)
+		errSetBlank := ar.baseReference.SetBlank(ctx, username)
 		if errSetBlank != nil {
 			return errSetBlank
 		}
 
-		return account2.NotFound
+		return NotFound
 	}
 
-	errSetAcc := asql.base.Set(account)
+	pipe := ar.redis.Pipeline()
+	errSetAcc := ar.base.Set(ctx, pipe, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSetReference := asql.baseReference.Set(accountReference, account.Username)
+	errSetReference := ar.baseReference.Set(ctx, pipe, accountReference, account.Username)
 	if errSetReference != nil {
 		return errSetReference
 	}
 
-	if errSetAcc != nil {
-		return errSetAcc
-	}
-	return nil
+	_, errExec := pipe.Exec(ctx)
+	return errExec
 }
 
-func (asql *AccountRepository) FindByRandId(randId string) (*model.Account, error) {
-	return AccountRowScanner(asql.findByRandIdStmt.QueryRow(randId))
+func (ar *AccountRepository) FindByRandId(randId string) (*model.Account, error) {
+	return AccountRowScanner(ar.findByRandIdStmt.QueryRow(randId))
 }
 
-func (asql *AccountRepository) SeedByRandId(randId string) error {
-	account, err := asql.FindByRandId(randId)
+func (ar *AccountRepository) SeedByRandId(ctx context.Context, randId string) error {
+	account, err := ar.FindByRandId(randId)
 	if err != nil {
-		if errors.Is(err, account2.NotFound) {
-			errSetBlank := asql.baseReference.SetBlank(randId)
+		if errors.Is(err, NotFound) {
+			errSetBlank := ar.baseReference.SetBlank(ctx, randId)
 			if errSetBlank != nil {
 				return errSetBlank
 			}
@@ -235,73 +218,78 @@ func (asql *AccountRepository) SeedByRandId(randId string) error {
 		return err
 	}
 
-	errSetAcc := asql.base.Set(account)
+	pipe := ar.redis.Pipeline()
+	errSetAcc := ar.base.Set(ctx, pipe, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSetReference := asql.baseReference.Set(accountReference, account.Username)
+	errSetReference := ar.baseReference.Set(ctx, pipe, accountReference, account.Username)
 	if errSetReference != nil {
 		return errSetReference
 	}
-
-	return nil
+	_, errExec := pipe.Exec(ctx)
+	return errExec
 }
 
-func (asql *AccountRepository) FindByEmail(email string) (*model.Account, error) {
-	return AccountRowScanner(asql.findByEmailStmt.QueryRow(email))
+func (ar *AccountRepository) FindByEmail(email string) (*model.Account, error) {
+	return AccountRowScanner(ar.findByEmailStmt.QueryRow(email))
 }
 
-func (asql *AccountRepository) SeedByEmail(email string) error {
-	account, err := asql.FindByEmail(email)
+func (ar *AccountRepository) SeedByEmail(ctx context.Context, email string) error {
+	account, err := ar.FindByEmail(email)
 	if err != nil {
 		return err
 	}
 
-	errSetAcc := asql.base.Set(account)
+	pipe := ar.redis.Pipeline()
+	errSetAcc := ar.base.Set(ctx, pipe, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSetReference := asql.baseReference.Set(accountReference, account.Username)
+	errSetReference := ar.baseReference.Set(ctx, pipe, accountReference, account.Username)
 	if errSetReference != nil {
 		return errSetReference
 	}
 
-	return nil
+	_, errExec := pipe.Exec(ctx)
+	return errExec
 }
 
-func (asql *AccountRepository) FindByUUID(uuid string) (*model.Account, error) {
-	return AccountRowScanner(asql.findByUUIDStmt.QueryRow(uuid))
+func (ar *AccountRepository) FindByUUID(uuid string) (*model.Account, error) {
+	return AccountRowScanner(ar.findByUUIDStmt.QueryRow(uuid))
 }
 
-func (asql *AccountRepository) SeedByUUID(uuid string) error {
-	account, err := asql.FindByUUID(uuid)
+func (ar *AccountRepository) SeedByUUID(ctx context.Context, uuid string) error {
+	account, err := ar.FindByUUID(uuid)
 	if err != nil {
 		return err
 	}
 
-	errSetAcc := asql.base.Set(account)
+	pipe := ar.redis.Pipeline()
+	errSetAcc := ar.base.Set(ctx, pipe, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSetReference := asql.baseReference.Set(accountReference, account.Username)
+	errSetReference := ar.baseReference.Set(ctx, pipe, accountReference, account.Username)
 	if errSetReference != nil {
 		return errSetReference
 	}
 
-	return nil
+	_, errExec := pipe.Exec(ctx)
+	return errExec
 }
 
 func AccountRowScanner(row *sql.Row) (*model.Account, error) {
-	account := model.New()
+	account := model.NewAccount()
 	err := row.Scan(
 		&account.UUID,
 		&account.RandId,
@@ -317,7 +305,7 @@ func AccountRowScanner(row *sql.Row) (*model.Account, error) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, account2.NotFound
+			return nil, NotFound
 		}
 		return nil, err
 	}
@@ -325,11 +313,9 @@ func AccountRowScanner(row *sql.Row) (*model.Account, error) {
 	return account, nil
 }
 
-func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App) *AccountRepository {
+func NewAccountRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App) *AccountRepository {
 	base := redifu.NewBase[*model.Account](redis, app.EntityName+":%s", app.RecordAge)
 	baseReference := redifu.NewBase[*model.AccountReference](redis, app.EntityName+":username:%s", app.RecordAge)
-	sortedAccount := redifu.NewSorted[*model.Account](redis, base, "account", app.PaginationAge)
-	sortedAccountSeeder := redifu.NewSortedSeeder[*model.Account](readDB, base, sortedAccount)
 
 	var errPrepare error
 	findByUsernameStmt, errPrepare := readDB.Prepare(
@@ -358,15 +344,13 @@ func NewRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App)
 	}
 
 	return &AccountRepository{
-		base:                base,
-		baseReference:       baseReference,
-		sortedAccount:       sortedAccount,
-		sortedAccountSeeder: sortedAccountSeeder,
-		redis:               redis,
-		findByUsernameStmt:  findByUsernameStmt,
-		findByRandIdStmt:    findByRandId,
-		findByEmailStmt:     findByEmailStmt,
-		findByUUIDStmt:      findByUUIDStmt,
-		app:                 app,
+		base:               base,
+		baseReference:      baseReference,
+		redis:              redis,
+		findByUsernameStmt: findByUsernameStmt,
+		findByRandIdStmt:   findByRandId,
+		findByEmailStmt:    findByEmailStmt,
+		findByUUIDStmt:     findByUUIDStmt,
+		app:                app,
 	}
 }

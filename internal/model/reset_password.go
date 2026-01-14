@@ -1,11 +1,14 @@
 package model
 
 import (
-	"github.com/21strive/commonuser/internal/constant"
+	"errors"
 	"github.com/21strive/item"
 	"github.com/21strive/redifu"
 	"time"
 )
+
+var InvalidResetPasswordToken = errors.New("invalid reset password token")
+var ResetPasswordRequestExpired = errors.New("reset password request has expired")
 
 type ResetPassword struct {
 	*redifu.Record `bson:",inline" json:",inline"`
@@ -33,15 +36,15 @@ func (rpsql *ResetPassword) IsExpired() bool {
 func (rpsql *ResetPassword) Validate(token string) error {
 	time := time.Now().UTC()
 	if time.After(rpsql.ExpiredAt) {
-		return constant.RequestExpired
+		return ResetPasswordRequestExpired
 	}
 	if rpsql.Token != token {
-		return constant.InvalidToken
+		return InvalidResetPasswordToken
 	}
 	return nil
 }
 
-func New() *ResetPassword {
+func NewResetPasswordRequest() *ResetPassword {
 	request := &ResetPassword{}
 	redifu.InitRecord(request)
 	request.ExpiredAt = time.Now().Add(time.Hour * 48)

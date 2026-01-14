@@ -40,7 +40,7 @@ func (o *AccountOps) Register(db database.SQLExecutor, newAccount *model.Account
 	var verificationCode string
 	var newVerification *model.Verification
 	if requireVerification {
-		newVerification = model.New()
+		newVerification = model.NewAccount()
 		newVerification.SetAccount(newAccount)
 		verificationCode = newVerification.SetCode()
 		errCreateVerification := o.verificationRepository.Create(db, newVerification)

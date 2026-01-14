@@ -1,14 +1,19 @@
 package session
 
 import (
+	"errors"
 	"github.com/21strive/commonuser/internal/database"
+	"github.com/21strive/commonuser/internal/fetcher"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
 	"time"
 )
 
+var InvalidSession = errors.New("invalid session")
+
 type SessionOps struct {
-	sessionRepository repository.SessionRepository
+	sessionRepository *repository.SessionRepository
+	sessionFetcher    *fetcher.SessionFetcher
 }
 
 func (s *SessionOps) Create(db database.SQLExecutor, session *model.Session) error {
@@ -74,6 +79,37 @@ func (s *SessionOps) PurgeInvalid(db database.SQLExecutor) error {
 	return s.s.sessionRepository.PurgeInvalid(db)
 }
 
-func (aw *Service) Session() *SessionOps {
-	return &SessionOps{s: aw}
+func (s *SessionOps) Ping(sessionRandId string) (*model.Session, error) {
+	sessionFromCache, err := s.sessionFetcher.FetchByRandId(sessionRandId)
+	if err != nil {
+		return nil, err
+	}
+	if sessionFromCache == nil {
+		return nil, constant.Unauthorized
+	}
+	if !sessionFromCache.IsValid() {
+		return nil, constant.Unauthorized
+	}
+
+	return sessionFromCache, nil
+}
+
+func (s *SessionOps) FetchByAccount(accountRandId string) ([]*model.Session, error) {
+	isBlank, errCheck := s.sessionFetcher.IsBlankPage(accountRandId)
+	if errCheck != nil {
+		return nil, errCheck
+	}
+	if isBlank {
+		return nil, nil
+	}
+
+	sessions, err := s.sessionFetcher.FetchByAccount(accountRandId)
+	if err != nil {
+		return nil, err
+	}
+	if len(sessions) == 0 {
+		return nil, session.SeedRequired
+	}
+
+	return sessions, nil
 }
