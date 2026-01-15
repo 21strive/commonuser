@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"context"
 	"errors"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
@@ -9,21 +10,36 @@ import (
 )
 
 type VerificationOps struct {
-	accountRepository  *repository.AccountRepository
-	sessionRepository  *repository.AccountRepository
-	providerRepository *repository.AccountRepository
-	config             *config.App
+	accountRepository      *repository.AccountRepository
+	sessionRepository      *repository.SessionRepository
+	providerRepository     *repository.ProviderRepository
+	verificationRepository *repository.VerificationRepository
+	config                 *config.App
+}
+
+func (v *VerificationOps) Init(
+	accountRepository *repository.AccountRepository,
+	sessionRepository *repository.SessionRepository,
+	providerRepository *repository.ProviderRepository,
+	verificationRepository *repository.VerificationRepository,
+	config *config.App,
+) {
+	v.accountRepository = accountRepository
+	v.sessionRepository = sessionRepository
+	v.providerRepository = providerRepository
+	v.verificationRepository = verificationRepository
+	v.config = config
 }
 
 func (v *VerificationOps) Request(db database.SQLExecutor, accountUUID string) (*model.Verification, error) {
-	accountFromDB, errFind := v.s.accountRepository.FindByUUID(accountUUID)
+	accountFromDB, errFind := v.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return nil, errFind
 	}
 
-	verificationFromDB, errFind := v.s.verificationRepository.FindByAccount(accountFromDB)
+	verificationFromDB, errFind := v.verificationRepository.FindByAccount(accountFromDB)
 	if errFind != nil {
-		if errors.Is(errFind, verification.VerificationNotFound) {
+		if errors.Is(errFind, model.VerificationNotFound) {
 			return nil, errFind
 		}
 	}
@@ -31,10 +47,10 @@ func (v *VerificationOps) Request(db database.SQLExecutor, accountUUID string) (
 		return verificationFromDB, nil
 	}
 
-	verificationData := model.NewAccount()
+	verificationData := model.NewVerification()
 	verificationData.SetAccount(accountFromDB)
 	verificationData.SetCode()
-	errCreateVerification := v.s.verificationRepository.Create(db, verificationData)
+	errCreateVerification := v.verificationRepository.Create(db, verificationData)
 	if errCreateVerification != nil {
 		return nil, errCreateVerification
 	}
@@ -42,7 +58,7 @@ func (v *VerificationOps) Request(db database.SQLExecutor, accountUUID string) (
 	return verificationData, nil
 }
 
-func (v *VerificationOps) Verify(db database.SQLExecutor, accountUUID string, code string, sessionId string) (string, error) {
+func (v *VerificationOps) Verify(ctx context.Context, db database.SQLExecutor, accountUUID string, code string, sessionId string) (string, error) {
 	var newAccessToken string
 	accountFromDB, errFind := v.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
@@ -56,11 +72,11 @@ func (v *VerificationOps) Verify(db database.SQLExecutor, accountUUID string, co
 
 	isValid := verificationFromDB.Validate(code)
 	if !isValid {
-		return newAccessToken, verification.InvalidVerificationCode
+		return newAccessToken, model.InvalidVerificationCode
 	}
 
 	accountFromDB.SetEmailVerified()
-	errUpdate := v.accountRepository.Update(db, accountFromDB)
+	errUpdate := v.accountRepository.Update(ctx, db, accountFromDB)
 	if errUpdate != nil {
 		return newAccessToken, errUpdate
 	}
@@ -83,19 +99,19 @@ func (v *VerificationOps) Verify(db database.SQLExecutor, accountUUID string, co
 }
 
 func (v *VerificationOps) Resend(db database.SQLExecutor, accountUUID string) (*model.Verification, error) {
-	accountFromDB, errFind := v.s.accountRepository.FindByUUID(accountUUID)
+	accountFromDB, errFind := v.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return nil, errFind
 	}
 
 	var verificationData *model.Verification
-	verificationData, errFind = v.s.verificationRepository.FindByAccount(accountFromDB)
+	verificationData, errFind = v.verificationRepository.FindByAccount(accountFromDB)
 	if errFind != nil {
-		if errFind == verification.VerificationNotFound {
-			verificationData = model.NewAccount()
+		if errFind == model.VerificationNotFound {
+			verificationData = model.NewVerification()
 			verificationData.SetAccount(accountFromDB)
 			verificationData.SetCode()
-			errCreateVerification := v.s.verificationRepository.Create(db, verificationData)
+			errCreateVerification := v.verificationRepository.Create(db, verificationData)
 			if errCreateVerification != nil {
 				return nil, errCreateVerification
 			}
@@ -105,10 +121,14 @@ func (v *VerificationOps) Resend(db database.SQLExecutor, accountUUID string) (*
 	}
 
 	verificationData.SetCode()
-	errUpdate := v.s.verificationRepository.Update(db, verificationData)
+	errUpdate := v.verificationRepository.Update(db, verificationData)
 	if errUpdate != nil {
 		return nil, errUpdate
 	}
 
 	return verificationData, nil
+}
+
+func New() *VerificationOps {
+	return &VerificationOps{}
 }

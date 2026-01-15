@@ -9,6 +9,7 @@ import (
 
 var InvalidResetPasswordToken = errors.New("invalid reset password token")
 var ResetPasswordRequestExpired = errors.New("reset password request has expired")
+var ResetPasswordTicketNotFound = errors.New("Reset password ticket not found")
 
 type ResetPassword struct {
 	*redifu.Record `bson:",inline" json:",inline"`

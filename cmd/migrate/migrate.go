@@ -82,7 +82,7 @@ func main() {
 		}
 	}()
 
-	// Create tables within transaction
+	// CreateRequest tables within transaction
 	tables := []struct {
 		name       string
 		createFunc func(*sql.Tx, string) (bool, error)

@@ -11,12 +11,12 @@ import (
 var UpdateEmailTicketNotFound = errors.New("Update email ticket not found")
 var InvalidUpdateEmailToken = errors.New("Invalid token")
 
-type UpdateEmailRepository struct {
+type EmailRepository struct {
 	app               *config.App
 	findByAccountStmt *sql.Stmt
 }
 
-func (em *UpdateEmailRepository) CreateRequest(db database.SQLExecutor, request *model.UpdateEmail) error {
+func (em *EmailRepository) CreateRequest(db database.SQLExecutor, request *model.UpdateEmail) error {
 	tableName := em.app.EntityName + "_update_email"
 	query := `INSERT INTO ` + tableName + ` 
 		(
@@ -49,7 +49,7 @@ func (em *UpdateEmailRepository) CreateRequest(db database.SQLExecutor, request 
 	return errInsert
 }
 
-func (em *UpdateEmailRepository) UpdateRequest(db database.SQLExecutor, request *model.UpdateEmail) error {
+func (em *EmailRepository) UpdateRequest(db database.SQLExecutor, request *model.UpdateEmail) error {
 	tableName := em.app.EntityName + "_update_email"
 	query := `UPDATE ` + tableName + ` SET updated_at = $1, processed = $2 WHERE uuid = $3`
 	_, errUpdate := db.Exec(
@@ -62,7 +62,7 @@ func (em *UpdateEmailRepository) UpdateRequest(db database.SQLExecutor, request 
 	return errUpdate
 }
 
-func (em *UpdateEmailRepository) FindRequest(account *model.Account) (*model.UpdateEmail, error) {
+func (em *EmailRepository) FindRequest(account *model.Account) (*model.UpdateEmail, error) {
 	row := em.findByAccountStmt.QueryRow(account.GetUUID())
 	updateEmailRequest := model.NewUpdateEmailRequest()
 	err := row.Scan(
@@ -88,7 +88,7 @@ func (em *UpdateEmailRepository) FindRequest(account *model.Account) (*model.Upd
 	return updateEmailRequest, nil
 }
 
-func (em *UpdateEmailRepository) DeleteAll(db database.SQLExecutor, account *model.Account) error {
+func (em *EmailRepository) DeleteAllRequest(db database.SQLExecutor, account *model.Account) error {
 	tableName := em.app.EntityName + "_update_email"
 	query := `DELETE FROM ` + tableName + ` WHERE account_uuid = $1`
 	_, errDelete := db.Exec(query, account.GetUUID())
@@ -98,7 +98,7 @@ func (em *UpdateEmailRepository) DeleteAll(db database.SQLExecutor, account *mod
 	return nil
 }
 
-func NewUpdateEmailManager(readDB *sql.DB, app *config.App) *UpdateEmailRepository {
+func NewUpdateEmailManager(readDB *sql.DB, app *config.App) *EmailRepository {
 	tableName := app.EntityName + "_update_email"
 
 	// always find the most recent ticket
@@ -107,7 +107,7 @@ func NewUpdateEmailManager(readDB *sql.DB, app *config.App) *UpdateEmailReposito
 		panic(errPrepare)
 	}
 
-	return &UpdateEmailRepository{
+	return &EmailRepository{
 		findByAccountStmt: findByAccountStmt,
 		app:               app,
 	}

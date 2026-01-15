@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
@@ -10,12 +11,19 @@ import (
 
 type AuthOps struct {
 	accountRepository  *repository.AccountRepository
-	sessionRepository  *repository.AccountRepository
-	providerRepository *repository.AccountRepository
+	sessionRepository  *repository.SessionRepository
+	providerRepository *repository.ProviderRepository
 	config             *config.App
 }
 
-func (o *AuthOps) ByProvider(db database.SQLExecutor, issuer string, sub string, deviceInfo DeviceInfo) (string, string, error) {
+func (o *AuthOps) Init(accountRepository *repository.AccountRepository, sessionRepository *repository.SessionRepository, providerRepository *repository.ProviderRepository, config *config.App) {
+	o.accountRepository = accountRepository
+	o.sessionRepository = sessionRepository
+	o.providerRepository = providerRepository
+	o.config = config
+}
+
+func (o *AuthOps) ByProvider(ctx context.Context, db database.SQLExecutor, issuer string, sub string, deviceInfo model.DeviceInfo) (string, string, error) {
 	providerFromDB, errFind := o.providerRepository.Find(sub, issuer)
 	if errFind != nil {
 		return "", "", errFind
@@ -26,40 +34,40 @@ func (o *AuthOps) ByProvider(db database.SQLExecutor, issuer string, sub string,
 		return "", "", errFind
 	}
 
-	return o.GenerateToken(db, accountFromDB, deviceInfo.DeviceId, deviceInfo.DeviceType, deviceInfo.UserAgent)
+	return o.GenerateToken(ctx, db, accountFromDB, deviceInfo.DeviceId, deviceInfo.DeviceType, deviceInfo.UserAgent)
 }
 
-func (o *AuthOps) ByUsername(db database.SQLExecutor, username string, password string, deviceInfo DeviceInfo) (string, string, error) {
+func (o *AuthOps) ByUsername(ctx context.Context, db database.SQLExecutor, username string, password string, deviceInfo model.DeviceInfo) (string, string, error) {
 	accountFromDB, errFindUser := o.accountRepository.FindByUsername(username)
 	if errFindUser != nil {
 		return "", "", errFindUser
 	}
 
-	return o.AuthenticatePassword(db, accountFromDB, password, deviceInfo)
+	return o.AuthenticatePassword(ctx, db, accountFromDB, password, deviceInfo)
 }
 
-func (o *AuthOps) ByEmail(db database.SQLExecutor, email string, password string, deviceInfo DeviceInfo) (string, string, error) {
+func (o *AuthOps) ByEmail(ctx context.Context, db database.SQLExecutor, email string, password string, deviceInfo model.DeviceInfo) (string, string, error) {
 	accountFromDB, errFindUser := o.accountRepository.FindByEmail(email)
 	if errFindUser != nil {
 		return "", "", errFindUser
 	}
 
-	return o.AuthenticatePassword(db, accountFromDB, password, deviceInfo)
+	return o.AuthenticatePassword(ctx, db, accountFromDB, password, deviceInfo)
 }
 
-func (o *AuthOps) AuthenticatePassword(db database.SQLExecutor, accountFromDB *model.Account, password string, deviceInfo DeviceInfo) (string, string, error) {
+func (o *AuthOps) AuthenticatePassword(ctx context.Context, db database.SQLExecutor, accountFromDB *model.Account, password string, deviceInfo model.DeviceInfo) (string, string, error) {
 	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(password)
 	if errVerifyPassword != nil {
 		return "", "", errVerifyPassword
 	}
 	if !isAuthenticated {
-		return "", "", constant.Unauthorized
+		return "", "", model.Unauthorized
 	}
 
-	return o.GenerateToken(db, accountFromDB, deviceInfo.DeviceId, deviceInfo.DeviceType, deviceInfo.UserAgent)
+	return o.GenerateToken(ctx, db, accountFromDB, deviceInfo.DeviceId, deviceInfo.DeviceType, deviceInfo.UserAgent)
 }
 
-func (o *AuthOps) GenerateToken(db database.SQLExecutor, accountFromDB *model.Account, deviceId string, deviceType string, userAgent string) (string, string, error) {
+func (o *AuthOps) GenerateToken(ctx context.Context, db database.SQLExecutor, accountFromDB *model.Account, deviceId string, deviceType string, userAgent string) (string, string, error) {
 	session := model.NewSession()
 	session.SetDeviceId(deviceId)
 	session.SetDeviceType(deviceType)
@@ -69,7 +77,7 @@ func (o *AuthOps) GenerateToken(db database.SQLExecutor, accountFromDB *model.Ac
 	session.SetLifeSpan(o.config.TokenLifespan)
 	session.GenerateRefreshToken()
 
-	err := o.sessionRepository.Create(db, session)
+	err := o.sessionRepository.Create(ctx, db, session)
 	if err != nil {
 		return "", "", err
 	}
@@ -84,4 +92,8 @@ func (o *AuthOps) GenerateToken(db database.SQLExecutor, accountFromDB *model.Ac
 	}
 
 	return accessToken, session.RefreshToken, nil
+}
+
+func New() *AuthOps {
+	return &AuthOps{}
 }

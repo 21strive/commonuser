@@ -4,9 +4,18 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"github.com/21strive/redifu"
 	"time"
 )
+
+var SessionNotFound = errors.New("session not found")
+
+type DeviceInfo struct {
+	DeviceId   string `json:"deviceId"`
+	DeviceType string `json:"deviceType"`
+	UserAgent  string `json:"userAgent"`
+}
 
 type Session struct {
 	*redifu.Record `bson:",inline" json:",inline"`

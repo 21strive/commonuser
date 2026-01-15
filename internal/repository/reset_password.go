@@ -2,20 +2,17 @@ package repository
 
 import (
 	"database/sql"
-	"errors"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
 )
-
-var ResetPasswordTicketNotFound = errors.New("Reset password ticket not found")
 
 type ResetPasswordRepository struct {
 	app               *config.App
 	findByAccountStmt *sql.Stmt
 }
 
-func (ar *ResetPasswordRepository) Create(db database.SQLExecutor, request *model.ResetPassword) error {
+func (ar *ResetPasswordRepository) CreateRequest(db database.SQLExecutor, request *model.ResetPassword) error {
 	tableName := ar.app.EntityName + "_reset_password"
 	query := `INSERT INTO ` + tableName + ` (
 		uuid, 
@@ -39,7 +36,7 @@ func (ar *ResetPasswordRepository) Create(db database.SQLExecutor, request *mode
 	return errInsert
 }
 
-func (ar *ResetPasswordRepository) Find(account *model.Account) (*model.ResetPassword, error) {
+func (ar *ResetPasswordRepository) FindRequest(account *model.Account) (*model.ResetPassword, error) {
 	row := ar.findByAccountStmt.QueryRow(account.GetUUID())
 	resetPasswordRequest := model.NewResetPasswordRequest()
 	err := row.Scan(
@@ -53,7 +50,7 @@ func (ar *ResetPasswordRepository) Find(account *model.Account) (*model.ResetPas
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, ResetPasswordTicketNotFound
+			return nil, model.ResetPasswordTicketNotFound
 		}
 		return nil, err
 	}
@@ -61,7 +58,7 @@ func (ar *ResetPasswordRepository) Find(account *model.Account) (*model.ResetPas
 	return resetPasswordRequest, nil
 }
 
-func (ar *ResetPasswordRepository) DeleteAll(db database.SQLExecutor, account *model.Account) error {
+func (ar *ResetPasswordRepository) DeleteAllRequests(db database.SQLExecutor, account *model.Account) error {
 	tableName := ar.app.EntityName + "_reset_password"
 	query := "DELETE FROM " + tableName + " WHERE account_uuid = $1"
 	_, errDelete := db.Exec(query, account.GetUUID())

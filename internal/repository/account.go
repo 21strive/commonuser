@@ -11,10 +11,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// key := asql.entityName + ":username:" + account.Username
-var NotFound = errors.New("account not found!")
-var SeedRequired = errors.New("seed required!")
-
 type AccountRepository struct {
 	redis              redis.UniversalClient
 	base               *redifu.Base[*model.Account]
@@ -79,8 +75,8 @@ func (ar *AccountRepository) Create(ctx context.Context, db database.SQLExecutor
 		return errSetReference
 	}
 
-	ar.baseReference.DelBlank(ctx, pipe, account.Username)
-	ar.base.DelBlank(ctx, pipe, account.GetRandId())
+	ar.baseReference.UnmarkMissing(ctx, pipe, account.Username)
+	ar.base.UnmarkMissing(ctx, pipe, account.GetRandId())
 
 	_, errExec := pipe.Exec(ctx)
 	return errExec
@@ -177,12 +173,12 @@ func (ar *AccountRepository) SeedByUsername(ctx context.Context, username string
 		return err
 	}
 	if account == nil {
-		errSetBlank := ar.baseReference.SetBlank(ctx, username)
+		errSetBlank := ar.baseReference.MarkAsMissing(ctx, username)
 		if errSetBlank != nil {
 			return errSetBlank
 		}
 
-		return NotFound
+		return model.AccountDoesNotExists
 	}
 
 	pipe := ar.redis.Pipeline()
@@ -209,8 +205,8 @@ func (ar *AccountRepository) FindByRandId(randId string) (*model.Account, error)
 func (ar *AccountRepository) SeedByRandId(ctx context.Context, randId string) error {
 	account, err := ar.FindByRandId(randId)
 	if err != nil {
-		if errors.Is(err, NotFound) {
-			errSetBlank := ar.baseReference.SetBlank(ctx, randId)
+		if errors.Is(err, model.AccountDoesNotExists) {
+			errSetBlank := ar.baseReference.MarkAsMissing(ctx, randId)
 			if errSetBlank != nil {
 				return errSetBlank
 			}
@@ -305,7 +301,7 @@ func AccountRowScanner(row *sql.Row) (*model.Account, error) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, NotFound
+			return nil, model.AccountDoesNotExists
 		}
 		return nil, err
 	}

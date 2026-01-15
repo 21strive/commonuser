@@ -4,10 +4,14 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"math/big"
 
 	"github.com/21strive/redifu"
 )
+
+var VerificationNotFound = errors.New("Verification not found")
+var InvalidVerificationCode = errors.New("Invalid verification code")
 
 type Verification struct {
 	*redifu.Record

@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
@@ -11,8 +10,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"time"
 )
-
-var SessionNotFound = errors.New("session not found")
 
 type SessionRepository struct {
 	base                  *redifu.Base[*model.Session]
@@ -92,7 +89,7 @@ func (sm *SessionRepository) scanSession(ctx context.Context, scanner interface 
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, SessionNotFound
+			return nil, model.SessionNotFound
 		}
 		return nil, err
 	}

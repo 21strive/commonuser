@@ -1,12 +1,18 @@
 package model
 
 import (
+	"errors"
 	"github.com/21strive/commonuser/internal/jwt_impl"
 	"github.com/21strive/redifu"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/matthewhartstonge/argon2"
 	"time"
 )
+
+var AccountDoesNotExists = errors.New("account does not exists")
+var AccountSeedRequired = errors.New("account seed is required")
+var Unauthorized = errors.New("unauthorized")
+var InvalidSession = errors.New("invalid session")
 
 type AssociatedAccount struct {
 	Name     string `json:"name,omitempty" db:"-"`

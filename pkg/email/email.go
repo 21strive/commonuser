@@ -8,7 +8,11 @@ import (
 )
 
 type EmailOps struct {
-	updateEmailRepository repository.UpdateEmailRepository
+	updateEmailRepository repository.EmailRepository
+}
+
+func (e *EmailOps) Init(updateEmailRepository *repository.EmailRepository) {
+	e.updateEmailRepository = updateEmailRepository
 }
 
 func (e *EmailOps) RequestUpdate(
@@ -146,4 +150,8 @@ func (e *EmailOps) RevokeUpdate(
 
 func (e *EmailOps) DeleteUpdateRequest(db database.SQLExecutor, account *model.Account) error {
 	return e.s.updateEmailRepository.DeleteAll(db, account)
+}
+
+func New() *EmailOps {
+	return &EmailOps{}
 }

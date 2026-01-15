@@ -1,7 +1,8 @@
 package session
 
 import (
-	"errors"
+	"context"
+	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/fetcher"
 	"github.com/21strive/commonuser/internal/model"
@@ -9,61 +10,75 @@ import (
 	"time"
 )
 
-var InvalidSession = errors.New("invalid session")
-
 type SessionOps struct {
 	sessionRepository *repository.SessionRepository
 	sessionFetcher    *fetcher.SessionFetcher
+	config            *config.App
 }
 
-func (s *SessionOps) Create(db database.SQLExecutor, session *model.Session) error {
-	return s.s.sessionRepository.Create(db, session)
+func (s *SessionOps) Init(
+	sessionRepository *repository.SessionRepository,
+	sessionFetcher *fetcher.SessionFetcher,
+	config *config.App,
+) {
+	s.sessionRepository = sessionRepository
+	s.sessionFetcher = sessionFetcher
+	s.config = config
 }
 
-func (s *SessionOps) Ping(db database.SQLExecutor, sessionRandId string) error {
-	sessionFromDB, errFind := s.s.sessionRepository.FindByRandId(sessionRandId)
+func (s *SessionOps) Create(ctx context.Context, db database.SQLExecutor, session *model.Session) error {
+	return s.sessionRepository.Create(ctx, db, session)
+}
+
+func (s *SessionOps) Ping(ctx context.Context, db database.SQLExecutor, sessionRandId string) error {
+	sessionFromDB, errFind := s.sessionRepository.FindByRandId(ctx, sessionRandId)
 	if errFind != nil {
 		return errFind
 	}
 
 	if sessionFromDB.IsValid() {
-		return session.InvalidSession
+		return model.InvalidSession
 	}
 
 	sessionFromDB.SetLastActiveAt(time.Now().UTC())
-	return s.s.sessionRepository.Update(db, sessionFromDB)
+	return s.sessionRepository.Update(ctx, db, sessionFromDB)
 }
 
-func (s *SessionOps) Revoke(db database.SQLExecutor, sessionUUID string) error {
-	session, errFind := s.s.sessionRepository.FindByUUID(sessionUUID)
+func (s *SessionOps) Revoke(ctx context.Context, db database.SQLExecutor, sessionUUID string) error {
+	session, errFind := s.sessionRepository.FindByUUID(ctx, sessionUUID)
 	if errFind != nil {
 		return errFind
 	}
 
 	session.SetUpdatedAt(time.Now().UTC())
 	session.Revoke()
-	return s.s.sessionRepository.Update(db, session)
+	return s.sessionRepository.Update(ctx, db, session)
 }
 
-func (s *SessionOps) Refresh(db database.SQLExecutor, account *model.Account, sessionRandId string) (string, string, error) {
-	sessionFromDB, errFind := s.s.sessionRepository.FindByRandId(sessionRandId)
+func (s *SessionOps) Refresh(ctx context.Context, db database.SQLExecutor, account *model.Account, sessionRandId string) (string, string, error) {
+	sessionFromDB, errFind := s.sessionRepository.FindByRandId(ctx, sessionRandId)
 	if errFind != nil {
 		return "", "", errFind
 	}
 	if !sessionFromDB.IsValid() {
-		return "", "", session.InvalidSession
+		return "", "", model.InvalidSession
 	}
 
 	sessionFromDB.SetUpdatedAt(time.Now().UTC())
 	sessionFromDB.SetLastActiveAt(time.Now().UTC())
-	sessionFromDB.SetLifeSpan(s.s.config.TokenLifespan)
+	sessionFromDB.SetLifeSpan(s.config.TokenLifespan)
 	sessionFromDB.GenerateRefreshToken()
-	errUpdate := s.s.sessionRepository.Update(db, sessionFromDB)
+	errUpdate := s.sessionRepository.Update(ctx, db, sessionFromDB)
 	if errUpdate != nil {
 		return "", "", errUpdate
 	}
 
-	newAccessToken, errGenerate := account.GenerateAccessToken(s.s.config.JWTSecret, s.s.config.JWTIssuer, s.s.config.JWTLifespan, sessionFromDB.GetRandId())
+	newAccessToken, errGenerate := account.GenerateAccessToken(
+		s.config.JWTSecret,
+		s.config.JWTIssuer,
+		s.config.JWTLifespan,
+		sessionFromDB.GetRandId(),
+	)
 	if errGenerate != nil {
 		return "", "", errGenerate
 	}
@@ -71,45 +86,25 @@ func (s *SessionOps) Refresh(db database.SQLExecutor, account *model.Account, se
 	return newAccessToken, sessionFromDB.RefreshToken, nil
 }
 
-func (s *SessionOps) SeedByAccount(account *model.Account) error {
-	return s.s.sessionRepository.SeedByAccount(account)
-}
-
 func (s *SessionOps) PurgeInvalid(db database.SQLExecutor) error {
-	return s.s.sessionRepository.PurgeInvalid(db)
+	return s.sessionRepository.PurgeInvalid(db)
 }
 
-func (s *SessionOps) Ping(sessionRandId string) (*model.Session, error) {
-	sessionFromCache, err := s.sessionFetcher.FetchByRandId(sessionRandId)
+func (s *SessionOps) PingByCache(ctx context.Context, sessionRandId string) (*model.Session, error) {
+	sessionFromCache, err := s.sessionFetcher.FetchByRandId(ctx, sessionRandId)
 	if err != nil {
 		return nil, err
 	}
 	if sessionFromCache == nil {
-		return nil, constant.Unauthorized
+		return nil, model.Unauthorized
 	}
 	if !sessionFromCache.IsValid() {
-		return nil, constant.Unauthorized
+		return nil, model.Unauthorized
 	}
 
 	return sessionFromCache, nil
 }
 
-func (s *SessionOps) FetchByAccount(accountRandId string) ([]*model.Session, error) {
-	isBlank, errCheck := s.sessionFetcher.IsBlankPage(accountRandId)
-	if errCheck != nil {
-		return nil, errCheck
-	}
-	if isBlank {
-		return nil, nil
-	}
-
-	sessions, err := s.sessionFetcher.FetchByAccount(accountRandId)
-	if err != nil {
-		return nil, err
-	}
-	if len(sessions) == 0 {
-		return nil, session.SeedRequired
-	}
-
-	return sessions, nil
+func New() *SessionOps {
+	return &SessionOps{}
 }
