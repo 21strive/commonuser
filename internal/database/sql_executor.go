@@ -1,5 +1,10 @@
 package database
 
+import (
+	"context"
+	"database/sql"
+)
+
 type SQLExecutor interface {
-	Exec(query string, args ...interface{}) (sql.Result, error)
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }

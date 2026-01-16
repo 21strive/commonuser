@@ -1,6 +1,7 @@
 package email
 
 import (
+	"context"
 	"errors"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
@@ -8,28 +9,28 @@ import (
 )
 
 type EmailOps struct {
-	updateEmailRepository repository.EmailRepository
+	updateEmailRepository *repository.EmailRepository
+	accountRepository     *repository.AccountRepository
+	sessionRepository     *repository.SessionRepository
 }
 
-func (e *EmailOps) Init(updateEmailRepository *repository.EmailRepository) {
+func (e *EmailOps) Init(updateEmailRepository *repository.EmailRepository, accountRepository *repository.AccountRepository, sessionRepository *repository.SessionRepository) {
 	e.updateEmailRepository = updateEmailRepository
+	e.accountRepository = accountRepository
+	e.sessionRepository = sessionRepository
 }
 
-func (e *EmailOps) RequestUpdate(
-	db database.SQLExecutor,
-	account *model.Account,
-	newEmailAddress string,
-) (*model.UpdateEmail, error) {
+func (e *EmailOps) RequestEmailChange(ctx context.Context, db database.SQLExecutor, account *model.Account, newEmailAddress string) (*model.UpdateEmail, error) {
 
-	requestFromDB, errFind := e.s.updateEmailRepository.FindRequest(account)
+	requestFromDB, errFind := e.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
-		if !errors.Is(errFind, update_email.TicketNotFound) {
+		if !errors.Is(errFind, model.EmailChangeTokenNotFound) {
 			return nil, errFind
 		}
 	}
 	if requestFromDB != nil {
 		if requestFromDB.IsExpired() {
-			errDeleteRequest := e.s.updateEmailRepository.DeleteAll(db, account)
+			errDeleteRequest := e.updateEmailRepository.DeleteAllRequest(ctx, db, account)
 			if errDeleteRequest != nil {
 				return nil, errDeleteRequest
 			}
@@ -38,7 +39,7 @@ func (e *EmailOps) RequestUpdate(
 		}
 	}
 
-	updateEmailRequest := model.NewAccount()
+	updateEmailRequest := model.NewUpdateEmailRequest()
 	updateEmailRequest.SetAccount(account)
 	updateEmailRequest.SetPreviousEmailAddress(account.Base.Email)
 	updateEmailRequest.SetNewEmailAddress(newEmailAddress)
@@ -52,7 +53,7 @@ func (e *EmailOps) RequestUpdate(
 		return nil, errGen
 	}
 
-	errCreateTicket := e.s.updateEmailRepository.CreateRequest(db, updateEmailRequest)
+	errCreateTicket := e.updateEmailRepository.CreateRequest(ctx, db, updateEmailRequest)
 	if errCreateTicket != nil {
 		return nil, errCreateTicket
 	}
@@ -60,17 +61,13 @@ func (e *EmailOps) RequestUpdate(
 	return updateEmailRequest, nil
 }
 
-func (e *EmailOps) ValidateUpdate(
-	db database.SQLExecutor,
-	accountUUID string,
-	token string,
-) error {
-	account, errFind := e.s.accountRepository.FindByUUID(accountUUID)
+func (e *EmailOps) ConfirmEmailChange(ctx context.Context, db database.SQLExecutor, accountUUID string, token string) error {
+	account, errFind := e.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return errFind
 	}
 
-	request, errFind := e.s.updateEmailRepository.FindRequest(account)
+	request, errFind := e.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
 		return errFind
 	}
@@ -80,27 +77,27 @@ func (e *EmailOps) ValidateUpdate(
 
 	errValidate := request.Validate(token)
 	if errValidate != nil {
-		if errors.Is(errValidate, constant.RequestExpired) {
-			e.s.updateEmailRepository.DeleteAll(db, account)
-			return constant.RequestExpired
+		if errors.Is(errValidate, model.EmailChangeRequestExpired) {
+			e.updateEmailRepository.DeleteAllRequest(ctx, db, account)
+			return model.EmailChangeRequestExpired
 		}
 		return errValidate
 	}
 
 	account.SetEmail(request.NewEmailAddress)
-	errUpdate := e.s.accountRepository.Update(db, account)
+	errUpdate := e.accountRepository.Update(ctx, db, account)
 	if errUpdate != nil {
 		return errUpdate
 	}
 
 	request.SetProcessed()
-	errUpdateTicket := e.s.updateEmailRepository.UpdateRequest(db, request)
+	errUpdateTicket := e.updateEmailRepository.UpdateRequest(ctx, db, request)
 	if errUpdateTicket != nil {
 		return errUpdateTicket
 	}
 
 	// revoke all running sessions
-	errRevoke := e.s.sessionRepository.RevokeAll(db, account)
+	errRevoke := e.sessionRepository.RevokeAll(ctx, db, account)
 	if errRevoke != nil {
 		return errRevoke
 	}
@@ -108,17 +105,13 @@ func (e *EmailOps) ValidateUpdate(
 	return nil
 }
 
-func (e *EmailOps) RevokeUpdate(
-	db database.SQLExecutor,
-	accountUUID string,
-	revokeToken string,
-) error {
-	account, errFind := e.s.accountRepository.FindByUUID(accountUUID)
+func (e *EmailOps) RevokeEmailChange(ctx context.Context, db database.SQLExecutor, accountUUID string, revokeToken string) error {
+	account, errFind := e.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return errFind
 	}
 
-	request, errFind := e.s.updateEmailRepository.FindRequest(account)
+	request, errFind := e.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
 		return errFind
 	}
@@ -129,18 +122,18 @@ func (e *EmailOps) RevokeUpdate(
 	}
 
 	account.SetEmail(request.PreviousEmailAddress)
-	errUpdate := e.s.accountRepository.Update(db, account)
+	errUpdate := e.accountRepository.Update(ctx, db, account)
 	if errUpdate != nil {
 		return errUpdate
 	}
 
-	errDeleteTicket := e.s.updateEmailRepository.DeleteAll(db, account)
+	errDeleteTicket := e.updateEmailRepository.DeleteAllRequest(ctx, db, account)
 	if errDeleteTicket != nil {
 		return errDeleteTicket
 	}
 
 	// revoke all running sessions
-	errRevoke := e.s.sessionRepository.RevokeAll(db, account)
+	errRevoke := e.sessionRepository.RevokeAll(ctx, db, account)
 	if errRevoke != nil {
 		return errRevoke
 	}
@@ -148,8 +141,8 @@ func (e *EmailOps) RevokeUpdate(
 	return nil
 }
 
-func (e *EmailOps) DeleteUpdateRequest(db database.SQLExecutor, account *model.Account) error {
-	return e.s.updateEmailRepository.DeleteAll(db, account)
+func (e *EmailOps) DeleteEmailChange(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
+	return e.updateEmailRepository.DeleteAllRequest(ctx, db, account)
 }
 
 func New() *EmailOps {

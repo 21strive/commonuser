@@ -1,22 +1,19 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
-	"errors"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
 )
-
-var UpdateEmailTicketNotFound = errors.New("Update email ticket not found")
-var InvalidUpdateEmailToken = errors.New("Invalid token")
 
 type EmailRepository struct {
 	app               *config.App
 	findByAccountStmt *sql.Stmt
 }
 
-func (em *EmailRepository) CreateRequest(db database.SQLExecutor, request *model.UpdateEmail) error {
+func (em *EmailRepository) CreateRequest(ctx context.Context, db database.SQLExecutor, request *model.UpdateEmail) error {
 	tableName := em.app.EntityName + "_update_email"
 	query := `INSERT INTO ` + tableName + ` 
 		(
@@ -32,7 +29,7 @@ func (em *EmailRepository) CreateRequest(db database.SQLExecutor, request *model
 			processed,
 			expired_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
-	_, errInsert := db.Exec(
+	_, errInsert := db.ExecContext(ctx,
 		query,
 		request.GetUUID(),
 		request.GetRandId(),
@@ -49,10 +46,10 @@ func (em *EmailRepository) CreateRequest(db database.SQLExecutor, request *model
 	return errInsert
 }
 
-func (em *EmailRepository) UpdateRequest(db database.SQLExecutor, request *model.UpdateEmail) error {
+func (em *EmailRepository) UpdateRequest(ctx context.Context, db database.SQLExecutor, request *model.UpdateEmail) error {
 	tableName := em.app.EntityName + "_update_email"
 	query := `UPDATE ` + tableName + ` SET updated_at = $1, processed = $2 WHERE uuid = $3`
-	_, errUpdate := db.Exec(
+	_, errUpdate := db.ExecContext(ctx,
 		query,
 		request.GetUpdatedAt(),
 		request.Processed,
@@ -80,7 +77,7 @@ func (em *EmailRepository) FindRequest(account *model.Account) (*model.UpdateEma
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, UpdateEmailTicketNotFound
+			return nil, model.EmailChangeTokenNotFound
 		}
 		return nil, err
 	}
@@ -88,10 +85,10 @@ func (em *EmailRepository) FindRequest(account *model.Account) (*model.UpdateEma
 	return updateEmailRequest, nil
 }
 
-func (em *EmailRepository) DeleteAllRequest(db database.SQLExecutor, account *model.Account) error {
+func (em *EmailRepository) DeleteAllRequest(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
 	tableName := em.app.EntityName + "_update_email"
 	query := `DELETE FROM ` + tableName + ` WHERE account_uuid = $1`
-	_, errDelete := db.Exec(query, account.GetUUID())
+	_, errDelete := db.ExecContext(ctx, query, account.GetUUID())
 	if errDelete != nil {
 		return errDelete
 	}

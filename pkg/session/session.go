@@ -86,8 +86,8 @@ func (s *SessionOps) Refresh(ctx context.Context, db database.SQLExecutor, accou
 	return newAccessToken, sessionFromDB.RefreshToken, nil
 }
 
-func (s *SessionOps) PurgeInvalid(db database.SQLExecutor) error {
-	return s.sessionRepository.PurgeInvalid(db)
+func (s *SessionOps) PurgeInvalid(ctx context.Context, db database.SQLExecutor) error {
+	return s.sessionRepository.PurgeInvalid(ctx, db)
 }
 
 func (s *SessionOps) PingByCache(ctx context.Context, sessionRandId string) (*model.Session, error) {

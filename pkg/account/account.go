@@ -23,7 +23,7 @@ func (o *AccountOps) Init(accountRepository *repository.AccountRepository, provi
 }
 
 func (o *AccountOps) RegisterWithProvider(ctx context.Context, db database.SQLExecutor, newAccount *model.Account, newProvider *model.Provider) error {
-	errCreateProvider := o.providerRepository.Create(db, newProvider)
+	errCreateProvider := o.providerRepository.Create(ctx, db, newProvider)
 	if errCreateProvider != nil {
 		return errCreateProvider
 	}
@@ -48,7 +48,7 @@ func (o *AccountOps) Register(ctx context.Context, db database.SQLExecutor, newA
 		newVerification = model.NewVerification()
 		newVerification.SetAccount(newAccount)
 		verificationCode = newVerification.SetCode()
-		errCreateVerification := o.verificationRepository.Create(db, newVerification)
+		errCreateVerification := o.verificationRepository.Create(ctx, db, newVerification)
 		if errCreateVerification != nil {
 			return nil, errCreateVerification
 		}

@@ -25,7 +25,7 @@ func (pu *PasswordOps) Init(
 	pu.accountRepository = accountRepository
 }
 
-func (pu *PasswordOps) RequestResetPassword(db database.SQLExecutor, account *model.Account, expiration *time.Time) (*model.ResetPassword, error) {
+func (pu *PasswordOps) RequestResetPassword(ctx context.Context, db database.SQLExecutor, account *model.Account, expiration *time.Time) (*model.ResetPassword, error) {
 	ticketFromDB, errFind := pu.resetPasswordRepository.FindRequest(account)
 	if errFind != nil {
 		if !errors.Is(errFind, model.ResetPasswordTicketNotFound) {
@@ -34,7 +34,7 @@ func (pu *PasswordOps) RequestResetPassword(db database.SQLExecutor, account *mo
 	}
 	if ticketFromDB != nil {
 		if ticketFromDB.IsExpired() {
-			errDeleteTicket := pu.resetPasswordRepository.DeleteAllRequests(db, account)
+			errDeleteTicket := pu.resetPasswordRepository.DeleteAllRequests(ctx, db, account)
 			if errDeleteTicket != nil {
 				return nil, errDeleteTicket
 			}
@@ -49,7 +49,7 @@ func (pu *PasswordOps) RequestResetPassword(db database.SQLExecutor, account *mo
 	if expiration != nil {
 		newResetPasswordTicket.SetExpiredAt(expiration)
 	}
-	errCreate := pu.resetPasswordRepository.CreateRequest(db, newResetPasswordTicket)
+	errCreate := pu.resetPasswordRepository.CreateRequest(ctx, db, newResetPasswordTicket)
 	if errCreate != nil {
 		return nil, errCreate
 	}
@@ -66,7 +66,7 @@ func (pu *PasswordOps) ValidateResetPassword(ctx context.Context, db database.SQ
 	errValidate := ticketFromDB.Validate(token)
 	if errValidate != nil {
 		if errors.Is(errValidate, model.ResetPasswordRequestExpired) {
-			pu.resetPasswordRepository.DeleteAllRequests(db, account)
+			pu.resetPasswordRepository.DeleteAllRequests(ctx, db, account)
 			return errValidate
 		}
 		return errValidate
@@ -79,13 +79,13 @@ func (pu *PasswordOps) ValidateResetPassword(ctx context.Context, db database.SQ
 		return errUpdate
 	}
 
-	errUpdateTicket := pu.resetPasswordRepository.DeleteAllRequests(db, account)
+	errUpdateTicket := pu.resetPasswordRepository.DeleteAllRequests(ctx, db, account)
 	if errUpdateTicket != nil {
 		return errUpdateTicket
 	}
 
 	// revoke all running sessions
-	errRevoke := pu.sessionRepository.RevokeAll(db, account)
+	errRevoke := pu.sessionRepository.RevokeAll(ctx, db, account)
 	if errRevoke != nil {
 		return errRevoke
 	}
@@ -93,13 +93,13 @@ func (pu *PasswordOps) ValidateResetPassword(ctx context.Context, db database.SQ
 	return nil
 }
 
-func (pu *PasswordOps) DeleteResetPasswordRequest(db database.SQLExecutor, accountUUID string) error {
+func (pu *PasswordOps) DeleteResetPasswordRequest(ctx context.Context, db database.SQLExecutor, accountUUID string) error {
 	accountFromDB, errFind := pu.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return errFind
 	}
 
-	return pu.resetPasswordRepository.DeleteAllRequests(db, accountFromDB)
+	return pu.resetPasswordRepository.DeleteAllRequests(ctx, db, accountFromDB)
 }
 
 func (pu *PasswordOps) UpdateResetPasswordRequest(ctx context.Context, db database.SQLExecutor, accountUUID string, oldPassword string, newPassword string) error {
@@ -119,7 +119,7 @@ func (pu *PasswordOps) UpdateResetPasswordRequest(ctx context.Context, db databa
 	accountFromDB.SetPassword(newPassword)
 
 	// revoke all running sessions
-	errRevoke := pu.sessionRepository.RevokeAll(db, accountFromDB)
+	errRevoke := pu.sessionRepository.RevokeAll(ctx, db, accountFromDB)
 	if errRevoke != nil {
 		return errRevoke
 	}

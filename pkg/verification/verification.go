@@ -31,7 +31,7 @@ func (v *VerificationOps) Init(
 	v.config = config
 }
 
-func (v *VerificationOps) Request(db database.SQLExecutor, accountUUID string) (*model.Verification, error) {
+func (v *VerificationOps) Request(ctx context.Context, db database.SQLExecutor, accountUUID string) (*model.Verification, error) {
 	accountFromDB, errFind := v.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return nil, errFind
@@ -50,7 +50,7 @@ func (v *VerificationOps) Request(db database.SQLExecutor, accountUUID string) (
 	verificationData := model.NewVerification()
 	verificationData.SetAccount(accountFromDB)
 	verificationData.SetCode()
-	errCreateVerification := v.verificationRepository.Create(db, verificationData)
+	errCreateVerification := v.verificationRepository.Create(ctx, db, verificationData)
 	if errCreateVerification != nil {
 		return nil, errCreateVerification
 	}
@@ -81,7 +81,7 @@ func (v *VerificationOps) Verify(ctx context.Context, db database.SQLExecutor, a
 		return newAccessToken, errUpdate
 	}
 
-	errDeleteVerification := v.verificationRepository.Delete(db, verificationFromDB)
+	errDeleteVerification := v.verificationRepository.Delete(ctx, db, verificationFromDB)
 	if errDeleteVerification != nil {
 		return newAccessToken, errDeleteVerification
 	}
@@ -98,7 +98,7 @@ func (v *VerificationOps) Verify(ctx context.Context, db database.SQLExecutor, a
 	return newAccessToken, nil
 }
 
-func (v *VerificationOps) Resend(db database.SQLExecutor, accountUUID string) (*model.Verification, error) {
+func (v *VerificationOps) Resend(ctx context.Context, db database.SQLExecutor, accountUUID string) (*model.Verification, error) {
 	accountFromDB, errFind := v.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return nil, errFind
@@ -111,7 +111,7 @@ func (v *VerificationOps) Resend(db database.SQLExecutor, accountUUID string) (*
 			verificationData = model.NewVerification()
 			verificationData.SetAccount(accountFromDB)
 			verificationData.SetCode()
-			errCreateVerification := v.verificationRepository.Create(db, verificationData)
+			errCreateVerification := v.verificationRepository.Create(ctx, db, verificationData)
 			if errCreateVerification != nil {
 				return nil, errCreateVerification
 			}
@@ -121,7 +121,7 @@ func (v *VerificationOps) Resend(db database.SQLExecutor, accountUUID string) (*
 	}
 
 	verificationData.SetCode()
-	errUpdate := v.verificationRepository.Update(db, verificationData)
+	errUpdate := v.verificationRepository.Update(ctx, db, verificationData)
 	if errUpdate != nil {
 		return nil, errUpdate
 	}

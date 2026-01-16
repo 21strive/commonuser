@@ -8,8 +8,9 @@ import (
 	"time"
 )
 
-var RequestExpired = errors.New("email update request has expired")
+var EmailChangeRequestExpired = errors.New("email update request has expired")
 var InvalidEmailChangeToken = errors.New("invalid email change verification token")
+var EmailChangeTokenNotFound = errors.New("email change token not found")
 
 type UpdateEmail struct {
 	*redifu.Record       `bson:",inline" json:",inline"`
@@ -68,7 +69,7 @@ func (ue *UpdateEmail) SetProcessed() {
 func (ue *UpdateEmail) Validate(token string) error {
 	time := time.Now().UTC()
 	if time.After(ue.ExpiredAt) {
-		return RequestExpired
+		return EmailChangeRequestExpired
 	}
 
 	match, err := argon2.VerifyEncoded([]byte(token), []byte(ue.Token))

@@ -45,7 +45,7 @@ func (ar *AccountRepository) Create(ctx context.Context, db database.SQLExecutor
 		email, 	
 		avatar
 	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
-	_, errInsert := db.Exec(
+	_, errInsert := db.ExecContext(ctx,
 		query,
 		account.GetUUID(),
 		account.GetRandId(),
@@ -85,7 +85,7 @@ func (ar *AccountRepository) Create(ctx context.Context, db database.SQLExecutor
 func (ar *AccountRepository) Update(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
 	query := "UPDATE " + ar.app.EntityName +
 		" SET updated_at = $1, name = $2, username = $3, password = $4, email = $5, avatar = $6, email_verified = $7 WHERE uuid = $8"
-	_, errUpdate := db.Exec(
+	_, errUpdate := db.ExecContext(ctx,
 		query,
 		account.GetUpdatedAt(),
 		account.Name,
@@ -132,7 +132,7 @@ func (ar *AccountRepository) UpdateReference(ctx context.Context, account *model
 
 func (ar *AccountRepository) Delete(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
 	query := "DELETE FROM " + ar.app.EntityName + " WHERE uuid = $1"
-	_, errDelete := db.Exec(query, account.GetUUID())
+	_, errDelete := db.ExecContext(ctx, query, account.GetUUID())
 	if errDelete != nil {
 		return errDelete
 	}

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
@@ -12,7 +13,7 @@ type ResetPasswordRepository struct {
 	findByAccountStmt *sql.Stmt
 }
 
-func (ar *ResetPasswordRepository) CreateRequest(db database.SQLExecutor, request *model.ResetPassword) error {
+func (ar *ResetPasswordRepository) CreateRequest(ctx context.Context, db database.SQLExecutor, request *model.ResetPassword) error {
 	tableName := ar.app.EntityName + "_reset_password"
 	query := `INSERT INTO ` + tableName + ` (
 		uuid, 
@@ -23,7 +24,7 @@ func (ar *ResetPasswordRepository) CreateRequest(db database.SQLExecutor, reques
 		token, 
 		expired_at
 	) VALUES ($1, $2, $3, $4, $5, $6, $7)`
-	_, errInsert := db.Exec(
+	_, errInsert := db.ExecContext(ctx,
 		query,
 		request.GetUUID(),
 		request.GetRandId(),
@@ -58,10 +59,10 @@ func (ar *ResetPasswordRepository) FindRequest(account *model.Account) (*model.R
 	return resetPasswordRequest, nil
 }
 
-func (ar *ResetPasswordRepository) DeleteAllRequests(db database.SQLExecutor, account *model.Account) error {
+func (ar *ResetPasswordRepository) DeleteAllRequests(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
 	tableName := ar.app.EntityName + "_reset_password"
 	query := "DELETE FROM " + tableName + " WHERE account_uuid = $1"
-	_, errDelete := db.Exec(query, account.GetUUID())
+	_, errDelete := db.ExecContext(ctx, query, account.GetUUID())
 	if errDelete != nil {
 		return errDelete
 	}

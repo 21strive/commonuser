@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
@@ -16,10 +17,10 @@ func (r *VerificationRepository) Close() {
 	r.findByAccountStmt.Close()
 }
 
-func (r *VerificationRepository) Create(db database.SQLExecutor, verification *model.Verification) error {
+func (r *VerificationRepository) Create(ctx context.Context, db database.SQLExecutor, verification *model.Verification) error {
 	tableName := r.app.EntityName + "_verification"
 	query := "INSERT INTO " + tableName + " VALUES ($1, $2, $3, $4, $5, $6)"
-	_, errExec := db.Exec(
+	_, errExec := db.ExecContext(ctx,
 		query,
 		verification.GetUUID(),
 		verification.GetRandId(),
@@ -34,10 +35,10 @@ func (r *VerificationRepository) Create(db database.SQLExecutor, verification *m
 	return nil
 }
 
-func (r *VerificationRepository) Update(db database.SQLExecutor, verification *model.Verification) error {
+func (r *VerificationRepository) Update(ctx context.Context, db database.SQLExecutor, verification *model.Verification) error {
 	tableName := r.app.EntityName + "_verification"
 	query := "UPDATE " + tableName + " SET verification_hash = $1 WHERE uuid = $2"
-	_, errExec := db.Exec(
+	_, errExec := db.ExecContext(ctx,
 		query,
 		verification.Code,
 		verification.GetUUID(),
@@ -49,10 +50,10 @@ func (r *VerificationRepository) Update(db database.SQLExecutor, verification *m
 	return nil
 }
 
-func (r *VerificationRepository) Delete(db database.SQLExecutor, verification *model.Verification) error {
+func (r *VerificationRepository) Delete(ctx context.Context, db database.SQLExecutor, verification *model.Verification) error {
 	tableName := r.app.EntityName + "_verification"
 	query := "DELETE FROM " + tableName + " WHERE uuid = $1"
-	_, errExec := db.Exec(query, verification.GetUUID())
+	_, errExec := db.ExecContext(ctx, query, verification.GetUUID())
 	if errExec != nil {
 		return errExec
 	}

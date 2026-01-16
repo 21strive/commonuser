@@ -17,6 +17,71 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+type (
+	Account       = model.Account
+	Session       = model.Session
+	Verification  = model.Verification
+	Provider      = model.Provider
+	UpdateEmail   = model.UpdateEmail
+	ResetPassword = model.ResetPassword
+)
+
+func IsAccountNotFound(err error) bool {
+	return errors.Is(err, model.AccountDoesNotExists)
+}
+
+func IsAccountSeedRequired(err error) bool {
+	return errors.Is(err, model.AccountSeedRequired)
+}
+
+func IsUnauthorized(err error) bool {
+	return errors.Is(err, model.Unauthorized)
+}
+
+func IsInvalidSession(err error) bool {
+	return errors.Is(err, model.InvalidSession)
+}
+
+func IsSessionNotFound(err error) bool {
+	return errors.Is(err, model.SessionNotFound)
+}
+
+func IsProviderNotFound(err error) bool {
+	return errors.Is(err, model.ProviderNotFound)
+}
+
+func IsVerificationNotFound(err error) bool {
+	return errors.Is(err, model.VerificationNotFound)
+}
+
+func IsInvalidVerificationCode(err error) bool {
+	return errors.Is(err, model.InvalidVerificationCode)
+}
+
+func IsRequestExpired(err error) bool {
+	return errors.Is(err, model.EmailChangeRequestExpired)
+}
+
+func IsInvalidEmailChangeToken(err error) bool {
+	return errors.Is(err, model.InvalidEmailChangeToken)
+}
+
+func IsEmailChangeTokenNotFound(err error) bool {
+	return errors.Is(err, model.EmailChangeTokenNotFound)
+}
+
+func IsInvalidResetPasswordToken(err error) bool {
+	return errors.Is(err, model.InvalidResetPasswordToken)
+}
+
+func IsResetPasswordRequestExpired(err error) bool {
+	return errors.Is(err, model.ResetPasswordRequestExpired)
+}
+
+func IsResetPasswordTicketNotFound(err error) bool {
+	return errors.Is(err, model.ResetPasswordTicketNotFound)
+}
+
 type Service struct {
 	accountRepository       *repository.AccountRepository
 	sessionRepository       *repository.SessionRepository
@@ -39,18 +104,6 @@ func (aw *Service) SessionBase() *redifu.Base[*model.Session] {
 
 func (aw *Service) Config() *config.App {
 	return aw.config
-}
-
-func IsAccountNotFound(err error) bool {
-	return errors.Is(err, model.AccountDoesNotExists)
-}
-
-func IsAccountSeedRequired(err error) bool {
-	return errors.Is(err, model.AccountSeedRequired)
-}
-
-func IsUnauthorized(err error) bool {
-	return errors.Is(err, model.Unauthorized)
 }
 
 // Builder methods - return operation structs with service reference
@@ -104,7 +157,11 @@ func (s *Service) Verification() *verification.VerificationOps {
 
 func (s *Service) Email() *email.EmailOps {
 	email := email.New()
-	email.Init(s.updateEmailRepository)
+	email.Init(
+		s.updateEmailRepository,
+		s.accountRepository,
+		s.sessionRepository,
+	)
 
 	return email
 }
@@ -137,4 +194,8 @@ func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Se
 		providerRepository:      providerRepository,
 		config:                  app,
 	}
+}
+
+func NewAccount() *model.Account {
+	return model.NewAccount()
 }

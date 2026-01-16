@@ -29,7 +29,7 @@ func (sm *SessionRepository) Create(ctx context.Context, db database.SQLExecutor
 	query := `INSERT INTO ` + tableName + ` (
 		uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, user_agent, 
 		refresh_token, expired_at, revoked) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
-	_, err := db.Exec(query,
+	_, err := db.ExecContext(ctx, query,
 		session.GetUUID(),
 		session.GetRandId(),
 		session.GetCreatedAt(),
@@ -54,7 +54,7 @@ func (sm *SessionRepository) Update(ctx context.Context, db database.SQLExecutor
 	tableName := sm.entityName + "_session"
 	query := `UPDATE ` + tableName + ` SET updated_at = $1, last_active_at = $2, 
 			  revoked = $3, refresh_token = $4 WHERE uuid = $5`
-	_, err := db.Exec(
+	_, err := db.ExecContext(ctx,
 		query,
 		session.GetUpdatedAt(),
 		session.LastActiveAt,
@@ -144,10 +144,10 @@ func (sm *SessionRepository) SeedByRandId(ctx context.Context, randId string) er
 	return sm.base.Upsert(ctx, sessionFromDB, randId)
 }
 
-func (sm *SessionRepository) RevokeAll(db database.SQLExecutor, account *model.Account) error {
+func (sm *SessionRepository) RevokeAll(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
 	tableName := sm.entityName + "_session"
 	query := "UPDATE " + tableName + " SET revoked = true WHERE account_uuid = $1"
-	_, errorExec := db.Exec(query, account.GetUUID())
+	_, errorExec := db.ExecContext(ctx, query, account.GetUUID())
 	if errorExec != nil {
 		return errorExec
 	}
@@ -155,10 +155,10 @@ func (sm *SessionRepository) RevokeAll(db database.SQLExecutor, account *model.A
 	return nil
 }
 
-func (sm *SessionRepository) PurgeInvalid(db database.SQLExecutor) error {
+func (sm *SessionRepository) PurgeInvalid(ctx context.Context, db database.SQLExecutor) error {
 	tableName := sm.entityName + "_session"
 	query := "DELETE FROM " + tableName + " WHERE expired_at < NOW() AND revoked = true"
-	_, errorExec := db.Exec(query)
+	_, errorExec := db.ExecContext(ctx, query)
 	if errorExec != nil {
 		return errorExec
 	}

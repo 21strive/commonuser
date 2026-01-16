@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/database"
@@ -12,10 +13,10 @@ type ProviderRepository struct {
 	app           *config.App
 }
 
-func (r *ProviderRepository) Create(db database.SQLExecutor, provider *model.Provider) error {
+func (r *ProviderRepository) Create(ctx context.Context, db database.SQLExecutor, provider *model.Provider) error {
 	tableName := r.app.EntityName + "_provider"
 	query := "INSERT INTO " + tableName + " (uuid, randid, created_at, updated_at, name, email, sub, issuer, account_uuid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
-	_, errExec := db.Exec(
+	_, errExec := db.ExecContext(ctx,
 		query,
 		provider.GetUUID(),
 		provider.GetRandId(),
@@ -64,10 +65,10 @@ func (r *ProviderRepository) Find(sub string, issuer string) (*model.Provider, e
 	return r.scanProvider(row)
 }
 
-func (r *ProviderRepository) Delete(db database.SQLExecutor, provider *model.Provider) error {
+func (r *ProviderRepository) Delete(ctx context.Context, db database.SQLExecutor, provider *model.Provider) error {
 	tableName := r.app.EntityName + "_provider"
 	query := "DELETE FROM " + tableName + " WHERE uuid = $1"
-	_, errExec := db.Exec(query, provider.GetUUID())
+	_, errExec := db.ExecContext(ctx, query, provider.GetUUID())
 	if errExec != nil {
 		return errExec
 	}
