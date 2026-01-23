@@ -33,7 +33,7 @@ func (ar *AccountRepository) Close() {
 	ar.findByUUIDStmt.Close()
 }
 
-func (ar *AccountRepository) Create(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
+func (ar *AccountRepository) Create(ctx context.Context, pipe redis.Pipeliner, db database.SQLExecutor, account *model.Account) error {
 	query := "INSERT INTO " + ar.app.EntityName + ` (
 		uuid, 
 		randid, 
@@ -62,27 +62,33 @@ func (ar *AccountRepository) Create(ctx context.Context, db database.SQLExecutor
 		return errInsert
 	}
 
-	pipe := ar.redis.Pipeline()
-	errSetAcc := ar.base.Set(ctx, pipe, account)
+	var selfPipe bool
+	if pipe == nil {
+		pipe = ar.redis.Pipeline()
+		selfPipe = true
+	}
+
+	errSetAcc := ar.base.WithPipeline(pipe).Set(ctx, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSetReference := ar.baseReference.Set(ctx, pipe, accountReference, account.Username)
+	errSetReference := ar.baseReference.WithPipeline(pipe).Set(ctx, accountReference, account.Username)
 	if errSetReference != nil {
 		return errSetReference
 	}
 
-	ar.baseReference.UnmarkMissing(ctx, pipe, account.Username)
-	ar.base.UnmarkMissing(ctx, pipe, account.GetRandId())
+	if selfPipe {
+		_, errExec := pipe.Exec(ctx)
+		return errExec
+	}
 
-	_, errExec := pipe.Exec(ctx)
-	return errExec
+	return nil
 }
 
-func (ar *AccountRepository) Update(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
+func (ar *AccountRepository) Update(ctx context.Context, pipe redis.Pipeliner, db database.SQLExecutor, account *model.Account) error {
 	query := "UPDATE " + ar.app.EntityName +
 		" SET updated_at = $1, name = $2, username = $3, password = $4, email = $5, avatar = $6, email_verified = $7 WHERE uuid = $8"
 	_, errUpdate := db.ExecContext(ctx,
@@ -99,7 +105,13 @@ func (ar *AccountRepository) Update(ctx context.Context, db database.SQLExecutor
 		return errUpdate
 	}
 
-	errSetAcc := ar.base.Upsert(ctx, account)
+	var errSetAcc error
+	if pipe == nil {
+		errSetAcc = ar.base.Set(ctx, account)
+	} else {
+		errSetAcc = ar.base.WithPipeline(pipe).Set(ctx, account)
+	}
+
 	if errSetAcc != nil {
 		return errSetAcc
 	}
@@ -107,39 +119,50 @@ func (ar *AccountRepository) Update(ctx context.Context, db database.SQLExecutor
 	return nil
 }
 
-func (ar *AccountRepository) UpdateReference(ctx context.Context, account *model.Account, oldUsername string, newUsername string) error {
+func (ar *AccountRepository) UpdateReference(ctx context.Context, pipe redis.Pipeliner, account *model.Account, oldUsername string, newUsername string) error {
 	ref, errGet := ar.baseReference.Get(ctx, oldUsername)
 	if errGet != nil {
 		return errGet
 	}
 
-	pipe := ar.redis.Pipeline()
-	err := ar.baseReference.Del(ctx, pipe, ref)
+	var selfPipe bool
+	if pipe == nil {
+		pipe = ar.redis.Pipeline()
+	}
+
+	err := ar.baseReference.WithPipeline(pipe).Del(ctx, ref)
 	if err != nil {
 		return err
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSet := ar.baseReference.Set(ctx, pipe, accountReference, newUsername)
+	errSet := ar.baseReference.WithPipeline(pipe).Set(ctx, accountReference, newUsername)
 	if errSet != nil {
 		return errSet
 	}
 
-	_, errExec := pipe.Exec(ctx)
-	return errExec
+	if selfPipe {
+		_, errExec := pipe.Exec(ctx)
+		return errExec
+	}
+
+	return nil
 }
 
-func (ar *AccountRepository) Delete(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
+func (ar *AccountRepository) Delete(ctx context.Context, pipe redis.Pipeliner, db database.SQLExecutor, account *model.Account) error {
 	query := "DELETE FROM " + ar.app.EntityName + " WHERE uuid = $1"
 	_, errDelete := db.ExecContext(ctx, query, account.GetUUID())
 	if errDelete != nil {
 		return errDelete
 	}
 
-	pipe := ar.redis.Pipeline()
+	var selfPipe bool
+	if pipe == nil {
+		pipe = ar.redis.Pipeline()
+	}
 
-	errDelAcc := ar.base.Del(ctx, pipe, account)
+	errDelAcc := ar.base.WithPipeline(pipe).Del(ctx, account)
 	if errDelAcc != nil {
 		return errDelAcc
 	}
@@ -154,10 +177,15 @@ func (ar *AccountRepository) Delete(ctx context.Context, db database.SQLExecutor
 		}
 	}
 	if referenceExists {
-		err := ar.baseReference.Del(ctx, pipe, ref)
+		err := ar.baseReference.WithPipeline(pipe).Del(ctx, ref)
 		if err != nil {
 			return err
 		}
+	}
+
+	if selfPipe {
+		_, errExec := pipe.Exec(ctx)
+		return errExec
 	}
 
 	return nil

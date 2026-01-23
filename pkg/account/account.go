@@ -2,13 +2,26 @@ package account
 
 import (
 	"context"
+	"database/sql"
 	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/fetcher"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
+	"github.com/redis/go-redis/v9"
 )
 
+type WithTransaction struct {
+	AccountOps *AccountOps
+	Pipeline   redis.Pipeliner
+	Tx         *sql.Tx
+}
+
+func (w *WithTransaction) Register(ctx context.Context, newAccount *model.Account, requireVerification bool) (*string, error) {
+	return w.AccountOps.register(ctx, w.Pipeline, w.Tx, newAccount, requireVerification)
+}
+
 type AccountOps struct {
+	writeDB                *sql.DB
 	accountRepository      *repository.AccountRepository
 	providerRepository     *repository.ProviderRepository
 	verificationRepository *repository.VerificationRepository
@@ -28,16 +41,16 @@ func (o *AccountOps) RegisterWithProvider(ctx context.Context, db database.SQLEx
 		return errCreateProvider
 	}
 
-	_, errRegister := o.Register(ctx, db, newAccount, false)
+	_, errRegister := o.register(ctx, db, newAccount, false)
 	return errRegister
 }
 
-func (o *AccountOps) Register(ctx context.Context, db database.SQLExecutor, newAccount *model.Account, requireVerification bool) (*string, error) {
+func (o *AccountOps) register(ctx context.Context, pipe redis.Pipeliner, db database.SQLExecutor, newAccount *model.Account, requireVerification bool) (*string, error) {
 	if !requireVerification {
 		newAccount.SetEmailVerified()
 	}
 
-	errCreateAcc := o.accountRepository.Create(ctx, db, newAccount)
+	errCreateAcc := o.accountRepository.Create(ctx, pipe, db, newAccount)
 	if errCreateAcc != nil {
 		return nil, errCreateAcc
 	}
@@ -55,6 +68,10 @@ func (o *AccountOps) Register(ctx context.Context, db database.SQLExecutor, newA
 	}
 
 	return &verificationCode, nil
+}
+
+func (o *AccountOps) Register(ctx context.Context, newAccount *model.Account, requireVerification bool) (*string, error) {
+	return o.register(ctx, nil, o.writeDB, newAccount, requireVerification)
 }
 
 func (o *AccountOps) Update(ctx context.Context, db database.SQLExecutor, accountUUID string, opt UpdateOpt) (*model.Account, error) {
