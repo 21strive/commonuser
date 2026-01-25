@@ -3,10 +3,11 @@ package session
 import (
 	"context"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/fetcher"
+	"github.com/21strive/commonuser/internal/interface"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
+	"github.com/21strive/commonuser/internal/types"
 	"time"
 )
 
@@ -26,11 +27,11 @@ func (s *SessionOps) Init(
 	s.config = config
 }
 
-func (s *SessionOps) Create(ctx context.Context, db database.SQLExecutor, session *model.Session) error {
+func (s *SessionOps) Create(ctx context.Context, db types.SQLExecutor, session *model.Session) error {
 	return s.sessionRepository.Create(ctx, db, session)
 }
 
-func (s *SessionOps) Ping(ctx context.Context, db database.SQLExecutor, sessionRandId string) error {
+func (s *SessionOps) Ping(ctx context.Context, db types.SQLExecutor, sessionRandId string) error {
 	sessionFromDB, errFind := s.sessionRepository.FindByRandId(ctx, sessionRandId)
 	if errFind != nil {
 		return errFind
@@ -44,7 +45,7 @@ func (s *SessionOps) Ping(ctx context.Context, db database.SQLExecutor, sessionR
 	return s.sessionRepository.Update(ctx, db, sessionFromDB)
 }
 
-func (s *SessionOps) Revoke(ctx context.Context, db database.SQLExecutor, sessionUUID string) error {
+func (s *SessionOps) Revoke(ctx context.Context, db types.SQLExecutor, sessionUUID string) error {
 	session, errFind := s.sessionRepository.FindByUUID(ctx, sessionUUID)
 	if errFind != nil {
 		return errFind
@@ -55,7 +56,7 @@ func (s *SessionOps) Revoke(ctx context.Context, db database.SQLExecutor, sessio
 	return s.sessionRepository.Update(ctx, db, session)
 }
 
-func (s *SessionOps) Refresh(ctx context.Context, db database.SQLExecutor, account *model.Account, sessionRandId string) (string, string, error) {
+func (s *SessionOps) Refresh(ctx context.Context, db types.SQLExecutor, account *model.Account, sessionRandId string) (string, string, error) {
 	sessionFromDB, errFind := s.sessionRepository.FindByRandId(ctx, sessionRandId)
 	if errFind != nil {
 		return "", "", errFind
@@ -86,7 +87,7 @@ func (s *SessionOps) Refresh(ctx context.Context, db database.SQLExecutor, accou
 	return newAccessToken, sessionFromDB.RefreshToken, nil
 }
 
-func (s *SessionOps) PurgeInvalid(ctx context.Context, db database.SQLExecutor) error {
+func (s *SessionOps) PurgeInvalid(ctx context.Context, db types.SQLExecutor) error {
 	return s.sessionRepository.PurgeInvalid(ctx, db)
 }
 

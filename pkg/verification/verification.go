@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/database"
+	"github.com/21strive/commonuser/internal/interface"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
 )
@@ -31,7 +31,7 @@ func (v *VerificationOps) Init(
 	v.config = config
 }
 
-func (v *VerificationOps) Request(ctx context.Context, db database.SQLExecutor, accountUUID string) (*model.Verification, error) {
+func (v *VerificationOps) Request(ctx context.Context, db types.SQLExecutor, accountUUID string) (*model.Verification, error) {
 	accountFromDB, errFind := v.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return nil, errFind
@@ -58,7 +58,7 @@ func (v *VerificationOps) Request(ctx context.Context, db database.SQLExecutor, 
 	return verificationData, nil
 }
 
-func (v *VerificationOps) Verify(ctx context.Context, db database.SQLExecutor, accountUUID string, code string, sessionId string) (string, error) {
+func (v *VerificationOps) Verify(ctx context.Context, db types.SQLExecutor, accountUUID string, code string, sessionId string) (string, error) {
 	var newAccessToken string
 	accountFromDB, errFind := v.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
@@ -98,7 +98,7 @@ func (v *VerificationOps) Verify(ctx context.Context, db database.SQLExecutor, a
 	return newAccessToken, nil
 }
 
-func (v *VerificationOps) Resend(ctx context.Context, db database.SQLExecutor, accountUUID string) (*model.Verification, error) {
+func (v *VerificationOps) Resend(ctx context.Context, db types.SQLExecutor, accountUUID string) (*model.Verification, error) {
 	accountFromDB, errFind := v.accountRepository.FindByUUID(accountUUID)
 	if errFind != nil {
 		return nil, errFind

@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/database"
+	"github.com/21strive/commonuser/internal/cache"
+	"github.com/21strive/commonuser/internal/interface"
 	"github.com/21strive/commonuser/internal/model"
+	"github.com/21strive/commonuser/internal/types"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 	"time"
@@ -24,7 +26,7 @@ func (sm *SessionRepository) GetBase() *redifu.Base[*model.Session] {
 	return sm.base
 }
 
-func (sm *SessionRepository) Create(ctx context.Context, db database.SQLExecutor, session *model.Session) error {
+func (sm *SessionRepository) Create(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, session *model.Session) error {
 	tableName := sm.entityName + "_session"
 	query := `INSERT INTO ` + tableName + ` (
 		uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, user_agent, 
@@ -46,10 +48,14 @@ func (sm *SessionRepository) Create(ctx context.Context, db database.SQLExecutor
 		return err
 	}
 
-	return sm.base.Upsert(ctx, session)
+	if pipe == nil {
+		return sm.base.Set(ctx, session)
+	} else {
+		return sm.base.WithPipeline(pipe).Set(ctx, session)
+	}
 }
 
-func (sm *SessionRepository) Update(ctx context.Context, db database.SQLExecutor, session *model.Session) error {
+func (sm *SessionRepository) Update(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, session *model.Session) error {
 	session.SetUpdatedAt(time.Now().UTC())
 	tableName := sm.entityName + "_session"
 	query := `UPDATE ` + tableName + ` SET updated_at = $1, last_active_at = $2, 
@@ -66,10 +72,14 @@ func (sm *SessionRepository) Update(ctx context.Context, db database.SQLExecutor
 		return err
 	}
 
-	return sm.base.Upsert(ctx, session)
+	if pipe == nil {
+		return sm.base.Set(ctx, session)
+	} else {
+		return sm.base.WithPipeline(pipe).Set(ctx, session)
+	}
 }
 
-func (sm *SessionRepository) scanSession(ctx context.Context, scanner interface {
+func (sm *SessionRepository) scanSession(ctx context.Context, pipe redis.Pipeliner, scanner interface {
 	Scan(dest ...interface{}) error
 }) (*model.Session, error) {
 	session := model.NewSession()
@@ -94,7 +104,11 @@ func (sm *SessionRepository) scanSession(ctx context.Context, scanner interface 
 		return nil, err
 	}
 
-	err = sm.base.Upsert(ctx, session)
+	if pipe == nil {
+		err = sm.base.Set(ctx, session)
+	} else {
+		err = sm.base.WithPipeline(pipe).Set(ctx, session)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -102,49 +116,30 @@ func (sm *SessionRepository) scanSession(ctx context.Context, scanner interface 
 	return session, nil
 }
 
-func (sm *SessionRepository) SessionRowsScanner(rows *sql.Rows) (*model.Session, error) {
-	session := model.NewSession()
-	err := rows.Scan(
-		&session.UUID,
-		&session.RandId,
-		&session.CreatedAt,
-		&session.UpdatedAt,
-		&session.LastActiveAt,
-		&session.AccountUUID,
-		&session.DeviceId,
-		&session.DeviceType,
-		&session.UserAgent,
-		&session.RefreshToken,
-		&session.ExpiredAt,
-		&session.Revoked,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return session, nil
-}
-
-func (sm *SessionRepository) FindByRandId(ctx context.Context, randId string) (*model.Session, error) {
+func (sm *SessionRepository) FindByRandId(ctx context.Context, pipe redis.Pipeliner, randId string) (*model.Session, error) {
 	row := sm.findByRandIdStmt.QueryRow(randId)
-	return sm.scanSession(ctx, row)
+	return sm.scanSession(ctx, pipe, row)
 }
 
-func (sm *SessionRepository) FindByUUID(ctx context.Context, uuid string) (*model.Session, error) {
+func (sm *SessionRepository) FindByUUID(ctx context.Context, pipe redis.Pipeliner, uuid string) (*model.Session, error) {
 	row := sm.findByUUIDStmt.QueryRow(uuid)
-	return sm.scanSession(ctx, row)
+	return sm.scanSession(ctx, pipe, row)
 }
 
-func (sm *SessionRepository) SeedByRandId(ctx context.Context, randId string) error {
-	sessionFromDB, errFind := sm.FindByRandId(ctx, randId)
+func (sm *SessionRepository) SeedByRandId(ctx context.Context, pipe redis.Pipeliner, randId string) error {
+	sessionFromDB, errFind := sm.FindByRandId(ctx, pipe, randId)
 	if errFind != nil {
 		return errFind
 	}
 
-	return sm.base.Upsert(ctx, sessionFromDB, randId)
+	if pipe == nil {
+		return sm.base.Set(ctx, sessionFromDB)
+	} else {
+		return sm.base.WithPipeline(pipe).Set(ctx, sessionFromDB)
+	}
 }
 
-func (sm *SessionRepository) RevokeAll(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
+func (sm *SessionRepository) RevokeAll(ctx context.Context, db types.SQLExecutor, account *model.Account) error {
 	tableName := sm.entityName + "_session"
 	query := "UPDATE " + tableName + " SET revoked = true WHERE account_uuid = $1"
 	_, errorExec := db.ExecContext(ctx, query, account.GetUUID())
@@ -155,7 +150,7 @@ func (sm *SessionRepository) RevokeAll(ctx context.Context, db database.SQLExecu
 	return nil
 }
 
-func (sm *SessionRepository) PurgeInvalid(ctx context.Context, db database.SQLExecutor) error {
+func (sm *SessionRepository) PurgeInvalid(ctx context.Context, db types.SQLExecutor) error {
 	tableName := sm.entityName + "_session"
 	query := "DELETE FROM " + tableName + " WHERE expired_at < NOW() AND revoked = true"
 	_, errorExec := db.ExecContext(ctx, query)
@@ -166,7 +161,7 @@ func (sm *SessionRepository) PurgeInvalid(ctx context.Context, db database.SQLEx
 	return nil
 }
 
-func NewSessionRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App) *SessionRepository {
+func NewSessionRepository(readDB *sql.DB, redis redis.UniversalClient, fetcherPool *cache.CachePool, app *config.App) *SessionRepository {
 	tableName := app.EntityName + "_session"
 	findByRandIdStmt, errPrepare := readDB.Prepare(`SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, 
        				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE randid = $1`)
@@ -178,10 +173,8 @@ func NewSessionRepository(readDB *sql.DB, redis redis.UniversalClient, app *conf
 		panic(errPrepare)
 	}
 
-	base := redifu.NewBase[*model.Session](redis, app.EntityName+":session:%s", app.TokenLifespan)
-
 	return &SessionRepository{
-		base:                  base,
+		base:                  fetcherPool.BaseSession,
 		entityName:            app.EntityName,
 		findByRandIdStmt:      findByRandIdStmt,
 		findByUUIDStmt:        findByUUIDStmt,

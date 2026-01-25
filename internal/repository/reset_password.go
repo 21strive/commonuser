@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/database"
+	"github.com/21strive/commonuser/internal/interface"
 	"github.com/21strive/commonuser/internal/model"
 )
 
@@ -13,7 +13,7 @@ type ResetPasswordRepository struct {
 	findByAccountStmt *sql.Stmt
 }
 
-func (ar *ResetPasswordRepository) CreateRequest(ctx context.Context, db database.SQLExecutor, request *model.ResetPassword) error {
+func (ar *ResetPasswordRepository) CreateRequest(ctx context.Context, db types.SQLExecutor, request *model.ResetPassword) error {
 	tableName := ar.app.EntityName + "_reset_password"
 	query := `INSERT INTO ` + tableName + ` (
 		uuid, 
@@ -59,7 +59,7 @@ func (ar *ResetPasswordRepository) FindRequest(account *model.Account) (*model.R
 	return resetPasswordRequest, nil
 }
 
-func (ar *ResetPasswordRepository) DeleteAllRequests(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
+func (ar *ResetPasswordRepository) DeleteAllRequests(ctx context.Context, db types.SQLExecutor, account *model.Account) error {
 	tableName := ar.app.EntityName + "_reset_password"
 	query := "DELETE FROM " + tableName + " WHERE account_uuid = $1"
 	_, errDelete := db.ExecContext(ctx, query, account.GetUUID())

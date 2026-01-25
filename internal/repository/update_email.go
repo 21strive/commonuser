@@ -4,16 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/database"
+	"github.com/21strive/commonuser/internal/interface"
 	"github.com/21strive/commonuser/internal/model"
+	"github.com/21strive/commonuser/internal/types"
 )
 
-type EmailRepository struct {
+type UpdateEmailRepository struct {
 	app               *config.App
 	findByAccountStmt *sql.Stmt
 }
 
-func (em *EmailRepository) CreateRequest(ctx context.Context, db database.SQLExecutor, request *model.UpdateEmail) error {
+func (em *UpdateEmailRepository) CreateRequest(ctx context.Context, db types.SQLExecutor, request *model.UpdateEmail) error {
 	tableName := em.app.EntityName + "_update_email"
 	query := `INSERT INTO ` + tableName + ` 
 		(
@@ -46,7 +47,7 @@ func (em *EmailRepository) CreateRequest(ctx context.Context, db database.SQLExe
 	return errInsert
 }
 
-func (em *EmailRepository) UpdateRequest(ctx context.Context, db database.SQLExecutor, request *model.UpdateEmail) error {
+func (em *UpdateEmailRepository) UpdateRequest(ctx context.Context, db types.SQLExecutor, request *model.UpdateEmail) error {
 	tableName := em.app.EntityName + "_update_email"
 	query := `UPDATE ` + tableName + ` SET updated_at = $1, processed = $2 WHERE uuid = $3`
 	_, errUpdate := db.ExecContext(ctx,
@@ -59,7 +60,7 @@ func (em *EmailRepository) UpdateRequest(ctx context.Context, db database.SQLExe
 	return errUpdate
 }
 
-func (em *EmailRepository) FindRequest(account *model.Account) (*model.UpdateEmail, error) {
+func (em *UpdateEmailRepository) FindRequest(account *model.Account) (*model.UpdateEmail, error) {
 	row := em.findByAccountStmt.QueryRow(account.GetUUID())
 	updateEmailRequest := model.NewUpdateEmailRequest()
 	err := row.Scan(
@@ -85,7 +86,7 @@ func (em *EmailRepository) FindRequest(account *model.Account) (*model.UpdateEma
 	return updateEmailRequest, nil
 }
 
-func (em *EmailRepository) DeleteAllRequest(ctx context.Context, db database.SQLExecutor, account *model.Account) error {
+func (em *UpdateEmailRepository) DeleteAllRequest(ctx context.Context, db types.SQLExecutor, account *model.Account) error {
 	tableName := em.app.EntityName + "_update_email"
 	query := `DELETE FROM ` + tableName + ` WHERE account_uuid = $1`
 	_, errDelete := db.ExecContext(ctx, query, account.GetUUID())
@@ -95,7 +96,7 @@ func (em *EmailRepository) DeleteAllRequest(ctx context.Context, db database.SQL
 	return nil
 }
 
-func NewUpdateEmailManager(readDB *sql.DB, app *config.App) *EmailRepository {
+func NewUpdateEmailManager(readDB *sql.DB, app *config.App) *UpdateEmailRepository {
 	tableName := app.EntityName + "_update_email"
 
 	// always find the most recent ticket
@@ -104,7 +105,7 @@ func NewUpdateEmailManager(readDB *sql.DB, app *config.App) *EmailRepository {
 		panic(errPrepare)
 	}
 
-	return &EmailRepository{
+	return &UpdateEmailRepository{
 		findByAccountStmt: findByAccountStmt,
 		app:               app,
 	}

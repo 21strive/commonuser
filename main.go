@@ -86,7 +86,7 @@ type Service struct {
 	accountRepository       *repository.AccountRepository
 	sessionRepository       *repository.SessionRepository
 	verificationRepository  *repository.VerificationRepository
-	updateEmailRepository   *repository.EmailRepository
+	updateEmailRepository   *repository.UpdateEmailRepository
 	resetPasswordRepository *repository.ResetPasswordRepository
 	providerRepository      *repository.ProviderRepository
 	accountFetcher          *fetcher.AccountFetcher

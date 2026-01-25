@@ -5,8 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/database"
+	"github.com/21strive/commonuser/internal/cache"
 	"github.com/21strive/commonuser/internal/model"
+	"github.com/21strive/commonuser/internal/types"
 	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 )
@@ -33,7 +34,7 @@ func (ar *AccountRepository) Close() {
 	ar.findByUUIDStmt.Close()
 }
 
-func (ar *AccountRepository) Create(ctx context.Context, pipe redis.Pipeliner, db database.SQLExecutor, account *model.Account) error {
+func (ar *AccountRepository) Create(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account) error {
 	query := "INSERT INTO " + ar.app.EntityName + ` (
 		uuid, 
 		randid, 
@@ -88,7 +89,7 @@ func (ar *AccountRepository) Create(ctx context.Context, pipe redis.Pipeliner, d
 	return nil
 }
 
-func (ar *AccountRepository) Update(ctx context.Context, pipe redis.Pipeliner, db database.SQLExecutor, account *model.Account) error {
+func (ar *AccountRepository) Update(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account) error {
 	query := "UPDATE " + ar.app.EntityName +
 		" SET updated_at = $1, name = $2, username = $3, password = $4, email = $5, avatar = $6, email_verified = $7 WHERE uuid = $8"
 	_, errUpdate := db.ExecContext(ctx,
@@ -150,7 +151,7 @@ func (ar *AccountRepository) UpdateReference(ctx context.Context, pipe redis.Pip
 	return nil
 }
 
-func (ar *AccountRepository) Delete(ctx context.Context, pipe redis.Pipeliner, db database.SQLExecutor, account *model.Account) error {
+func (ar *AccountRepository) Delete(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account) error {
 	query := "DELETE FROM " + ar.app.EntityName + " WHERE uuid = $1"
 	_, errDelete := db.ExecContext(ctx, query, account.GetUUID())
 	if errDelete != nil {
@@ -195,7 +196,7 @@ func (ar *AccountRepository) FindByUsername(username string) (*model.Account, er
 	return AccountRowScanner(ar.findByUsernameStmt.QueryRow(username))
 }
 
-func (ar *AccountRepository) SeedByUsername(ctx context.Context, username string) error {
+func (ar *AccountRepository) SeedByUsername(ctx context.Context, pipe redis.Pipeliner, username string) error {
 	account, err := ar.FindByUsername(username)
 	if err != nil {
 		return err
@@ -209,28 +210,37 @@ func (ar *AccountRepository) SeedByUsername(ctx context.Context, username string
 		return model.AccountDoesNotExists
 	}
 
-	pipe := ar.redis.Pipeline()
-	errSetAcc := ar.base.Set(ctx, pipe, account)
+	var selfPipe bool
+	if pipe == nil {
+		pipe = ar.redis.Pipeline()
+		selfPipe = true
+	}
+
+	errSetAcc := ar.base.WithPipeline(pipe).Set(ctx, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSetReference := ar.baseReference.Set(ctx, pipe, accountReference, account.Username)
+	errSetReference := ar.baseReference.WithPipeline(pipe).Set(ctx, accountReference, account.Username)
 	if errSetReference != nil {
 		return errSetReference
 	}
 
-	_, errExec := pipe.Exec(ctx)
-	return errExec
+	if selfPipe {
+		_, errExec := pipe.Exec(ctx)
+		return errExec
+	}
+
+	return nil
 }
 
 func (ar *AccountRepository) FindByRandId(randId string) (*model.Account, error) {
 	return AccountRowScanner(ar.findByRandIdStmt.QueryRow(randId))
 }
 
-func (ar *AccountRepository) SeedByRandId(ctx context.Context, randId string) error {
+func (ar *AccountRepository) SeedByRandId(ctx context.Context, pipe redis.Pipeliner, randId string) error {
 	account, err := ar.FindByRandId(randId)
 	if err != nil {
 		if errors.Is(err, model.AccountDoesNotExists) {
@@ -242,74 +252,102 @@ func (ar *AccountRepository) SeedByRandId(ctx context.Context, randId string) er
 		return err
 	}
 
-	pipe := ar.redis.Pipeline()
-	errSetAcc := ar.base.Set(ctx, pipe, account)
+	var selfPipe bool
+	if pipe == nil {
+		pipe = ar.redis.Pipeline()
+		selfPipe = true
+	}
+
+	errSetAcc := ar.base.WithPipeline(pipe).Set(ctx, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSetReference := ar.baseReference.Set(ctx, pipe, accountReference, account.Username)
+	errSetReference := ar.baseReference.WithPipeline(pipe).Set(ctx, accountReference, account.Username)
 	if errSetReference != nil {
 		return errSetReference
 	}
-	_, errExec := pipe.Exec(ctx)
-	return errExec
+
+	if selfPipe {
+		_, errExec := pipe.Exec(ctx)
+		return errExec
+	}
+
+	return nil
 }
 
 func (ar *AccountRepository) FindByEmail(email string) (*model.Account, error) {
 	return AccountRowScanner(ar.findByEmailStmt.QueryRow(email))
 }
 
-func (ar *AccountRepository) SeedByEmail(ctx context.Context, email string) error {
+func (ar *AccountRepository) SeedByEmail(ctx context.Context, pipe redis.Pipeliner, email string) error {
 	account, err := ar.FindByEmail(email)
 	if err != nil {
 		return err
 	}
 
-	pipe := ar.redis.Pipeline()
-	errSetAcc := ar.base.Set(ctx, pipe, account)
+	var selfPipe bool
+	if pipe == nil {
+		pipe = ar.redis.Pipeline()
+		selfPipe = true
+	}
+
+	errSetAcc := ar.base.WithPipeline(pipe).Set(ctx, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSetReference := ar.baseReference.Set(ctx, pipe, accountReference, account.Username)
+	errSetReference := ar.baseReference.WithPipeline(pipe).Set(ctx, accountReference, account.Username)
 	if errSetReference != nil {
 		return errSetReference
 	}
 
-	_, errExec := pipe.Exec(ctx)
-	return errExec
+	if selfPipe {
+		_, errExec := pipe.Exec(ctx)
+		return errExec
+	}
+
+	return nil
 }
 
 func (ar *AccountRepository) FindByUUID(uuid string) (*model.Account, error) {
 	return AccountRowScanner(ar.findByUUIDStmt.QueryRow(uuid))
 }
 
-func (ar *AccountRepository) SeedByUUID(ctx context.Context, uuid string) error {
+func (ar *AccountRepository) SeedByUUID(ctx context.Context, pipe redis.Pipeliner, uuid string) error {
 	account, err := ar.FindByUUID(uuid)
 	if err != nil {
 		return err
 	}
 
-	pipe := ar.redis.Pipeline()
-	errSetAcc := ar.base.Set(ctx, pipe, account)
+	var selfPipe bool
+	if pipe == nil {
+		pipe = ar.redis.Pipeline()
+		selfPipe = true
+	}
+
+	errSetAcc := ar.base.WithPipeline(pipe).Set(ctx, account)
 	if errSetAcc != nil {
 		return errSetAcc
 	}
 
 	accountReference := model.NewReference()
 	accountReference.SetAccountRandId(account.GetRandId())
-	errSetReference := ar.baseReference.Set(ctx, pipe, accountReference, account.Username)
+	errSetReference := ar.baseReference.WithPipeline(pipe).Set(ctx, accountReference, account.Username)
 	if errSetReference != nil {
 		return errSetReference
 	}
 
-	_, errExec := pipe.Exec(ctx)
-	return errExec
+	if selfPipe {
+		_, errExec := pipe.Exec(ctx)
+		return errExec
+	}
+
+	return nil
 }
 
 func AccountRowScanner(row *sql.Row) (*model.Account, error) {
@@ -337,10 +375,7 @@ func AccountRowScanner(row *sql.Row) (*model.Account, error) {
 	return account, nil
 }
 
-func NewAccountRepository(readDB *sql.DB, redis redis.UniversalClient, app *config.App) *AccountRepository {
-	base := redifu.NewBase[*model.Account](redis, app.EntityName+":%s", app.RecordAge)
-	baseReference := redifu.NewBase[*model.AccountReference](redis, app.EntityName+":username:%s", app.RecordAge)
-
+func NewAccountRepository(readDB *sql.DB, redis redis.UniversalClient, cachePool *cache.CachePool, app *config.App) *AccountRepository {
 	var errPrepare error
 	findByUsernameStmt, errPrepare := readDB.Prepare(
 		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, email_verified FROM " +
@@ -368,8 +403,8 @@ func NewAccountRepository(readDB *sql.DB, redis redis.UniversalClient, app *conf
 	}
 
 	return &AccountRepository{
-		base:               base,
-		baseReference:      baseReference,
+		base:               cachePool.BaseAccount,
+		baseReference:      cachePool.BaseReference,
 		redis:              redis,
 		findByUsernameStmt: findByUsernameStmt,
 		findByRandIdStmt:   findByRandId,
