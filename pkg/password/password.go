@@ -4,10 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
 	"github.com/21strive/commonuser/internal/types"
+	"github.com/21strive/commonuser/pkg/account"
+	"github.com/21strive/commonuser/pkg/session"
 	"github.com/redis/go-redis/v9"
 	"time"
 )
@@ -36,8 +37,12 @@ func (w *WithTransaction) UpdateResetPasswordRequest(ctx context.Context, pipe r
 type PasswordOps struct {
 	writeDB                 *sql.DB
 	resetPasswordRepository *repository.ResetPasswordRepository
-	sessionRepository       *repository.SessionRepository
-	accountRepository       *repository.AccountRepository
+	sessionOps              *session.SessionOps
+	accountOps              *account.AccountOps
+}
+
+func (pu *PasswordOps) SetWriteDB(db *sql.DB) {
+	pu.writeDB = db
 }
 
 func (pu *PasswordOps) requestResetPassword(ctx context.Context, db types.SQLExecutor, account *model.Account, expiration *time.Time) (*model.ResetPassword, error) {
@@ -93,9 +98,14 @@ func (pu *PasswordOps) validateResetPassword(ctx context.Context, pipe redis.Pip
 
 	account.SetPassword(newPassword)
 	account.SetUpdatedAt(time.Now().UTC())
-	errUpdate := pu.accountRepository.Update(ctx, pipe, db, account)
-	if errUpdate != nil {
-		return errUpdate
+	var errUpdateAccount error
+	if pipe != nil {
+		errUpdateAccount = pu.accountOps.WithTransaction(pipe, db.(*sql.Tx)).Update(ctx, account)
+	} else {
+		errUpdateAccount = pu.accountOps.Update(ctx, account)
+	}
+	if errUpdateAccount != nil {
+		return errUpdateAccount
 	}
 
 	errUpdateTicket := pu.resetPasswordRepository.DeleteAllRequests(ctx, db, account)
@@ -103,7 +113,10 @@ func (pu *PasswordOps) validateResetPassword(ctx context.Context, pipe redis.Pip
 		return errUpdateTicket
 	}
 
-	// revoke all running sessions
+	var errRevoke error
+	if pipe != nil {
+		errRevoke = pu.sessionOps.Revoke
+	}
 	errRevoke := pu.sessionRepository.RevokeAll(ctx, db, account)
 	if errRevoke != nil {
 		return errRevoke
@@ -158,11 +171,10 @@ func (pu *PasswordOps) UpdateResetPasswordRequest(ctx context.Context, accountUU
 	return pu.updateResetPasswordRequest(ctx, nil, pu.writeDB, accountUUID, oldPassword, newPassword)
 }
 
-func New(repositoryPool *database.RepositoryPool, writeDB *sql.DB) *PasswordOps {
+func New(resetPasswordRepository *repository.ResetPasswordRepository, sessionOps *session.SessionOps, accountOps *account.AccountOps) *PasswordOps {
 	return &PasswordOps{
-		writeDB:                 writeDB,
-		resetPasswordRepository: repositoryPool.ResetPasswordRepository,
-		sessionRepository:       repositoryPool.SessionRepository,
-		accountRepository:       repositoryPool.AccountRepository,
+		resetPasswordRepository: resetPasswordRepository,
+		sessionOps:              sessionOps,
+		accountOps:              accountOps,
 	}
 }

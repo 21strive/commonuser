@@ -4,8 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/cache"
-	"github.com/21strive/commonuser/internal/interface"
+	"github.com/21strive/commonuser/internal/fetcher"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/types"
 	"github.com/21strive/redifu"
@@ -139,17 +138,6 @@ func (sm *SessionRepository) SeedByRandId(ctx context.Context, pipe redis.Pipeli
 	}
 }
 
-func (sm *SessionRepository) RevokeAll(ctx context.Context, db types.SQLExecutor, account *model.Account) error {
-	tableName := sm.entityName + "_session"
-	query := "UPDATE " + tableName + " SET revoked = true WHERE account_uuid = $1"
-	_, errorExec := db.ExecContext(ctx, query, account.GetUUID())
-	if errorExec != nil {
-		return errorExec
-	}
-
-	return nil
-}
-
 func (sm *SessionRepository) PurgeInvalid(ctx context.Context, db types.SQLExecutor) error {
 	tableName := sm.entityName + "_session"
 	query := "DELETE FROM " + tableName + " WHERE expired_at < NOW() AND revoked = true"
@@ -161,7 +149,7 @@ func (sm *SessionRepository) PurgeInvalid(ctx context.Context, db types.SQLExecu
 	return nil
 }
 
-func NewSessionRepository(readDB *sql.DB, redis redis.UniversalClient, fetcherPool *cache.CachePool, app *config.App) *SessionRepository {
+func NewSessionRepository(readDB *sql.DB, redis redis.UniversalClient, baseSession *redifu.Base[*model.Session], app *config.App) *SessionRepository {
 	tableName := app.EntityName + "_session"
 	findByRandIdStmt, errPrepare := readDB.Prepare(`SELECT uuid, randid, created_at, updated_at, last_active_at, account_uuid, device_id, device_type, 
        				 user_agent, refresh_token, expired_at, revoked FROM ` + tableName + ` WHERE randid = $1`)
@@ -174,7 +162,7 @@ func NewSessionRepository(readDB *sql.DB, redis redis.UniversalClient, fetcherPo
 	}
 
 	return &SessionRepository{
-		base:                  fetcherPool.BaseSession,
+		base:                  baseSession,
 		entityName:            app.EntityName,
 		findByRandIdStmt:      findByRandIdStmt,
 		findByUUIDStmt:        findByUUIDStmt,

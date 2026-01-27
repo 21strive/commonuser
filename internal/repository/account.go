@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/cache"
+	"github.com/21strive/commonuser/internal/fetcher"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/types"
 	"github.com/21strive/redifu"
@@ -375,7 +375,7 @@ func AccountRowScanner(row *sql.Row) (*model.Account, error) {
 	return account, nil
 }
 
-func NewAccountRepository(readDB *sql.DB, redis redis.UniversalClient, cachePool *cache.CachePool, app *config.App) *AccountRepository {
+func NewAccountRepository(readDB *sql.DB, redis redis.UniversalClient, baseAccount *redifu.Base[*model.Account], baseReference *redifu.Base[*model.AccountReference], app *config.App) *AccountRepository {
 	var errPrepare error
 	findByUsernameStmt, errPrepare := readDB.Prepare(
 		"SELECT uuid, randid, created_at, updated_at, name, username, password, email, avatar, email_verified FROM " +
@@ -403,8 +403,8 @@ func NewAccountRepository(readDB *sql.DB, redis redis.UniversalClient, cachePool
 	}
 
 	return &AccountRepository{
-		base:               cachePool.BaseAccount,
-		baseReference:      cachePool.BaseReference,
+		base:               baseAccount,
+		baseReference:      baseReference,
 		redis:              redis,
 		findByUsernameStmt: findByUsernameStmt,
 		findByRandIdStmt:   findByRandId,

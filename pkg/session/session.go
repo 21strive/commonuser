@@ -4,12 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/cache"
-	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/fetcher"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
 	"github.com/21strive/commonuser/internal/types"
+	"github.com/21strive/redifu"
 	"github.com/redis/go-redis/v9"
 	"time"
 )
@@ -44,6 +43,14 @@ type SessionOps struct {
 	sessionRepository *repository.SessionRepository
 	sessionFetcher    *fetcher.SessionFetcher
 	config            *config.App
+}
+
+func (s *SessionOps) SetWriteDB(db *sql.DB) {
+	s.writeDB = db
+}
+
+func (s *SessionOps) GetSessionBase() *redifu.Base[*model.Session] {
+	return s.sessionRepository.GetBase()
 }
 
 func (s *SessionOps) WithTransaction(tx *sql.Tx) *WithTranscation {
@@ -89,6 +96,10 @@ func (s *SessionOps) revoke(ctx context.Context, pipe redis.Pipeliner, db types.
 
 func (s *SessionOps) Revoke(ctx context.Context, sessionUUID string) error {
 	return s.revoke(ctx, nil, s.writeDB, sessionUUID)
+}
+
+func (s *SessionOps) RevokeAll(ctx context.Context, account *model.Account) error {
+	// TODO: lanjut RevokeAll
 }
 
 func (s *SessionOps) refresh(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account, sessionRandId string) (string, string, error) {
@@ -149,11 +160,10 @@ func (s *SessionOps) PingByCache(ctx context.Context, sessionRandId string) (*mo
 	return sessionFromCache, nil
 }
 
-func New(repositoryPool *database.RepositoryPool, fetcherPool *cache.FetcherPool, config *config.App, writeDB *sql.DB) *SessionOps {
+func New(sessionRepository *repository.SessionRepository, sessionFetcher *fetcher.SessionFetcher, config *config.App) *SessionOps {
 	return &SessionOps{
-		writeDB:           writeDB,
-		sessionRepository: repositoryPool.SessionRepository,
-		sessionFetcher:    fetcherPool.SessionFetcher,
+		sessionRepository: sessionRepository,
+		sessionFetcher:    sessionFetcher,
 		config:            config,
 	}
 }

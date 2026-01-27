@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
 	"github.com/21strive/commonuser/internal/types"
@@ -35,14 +34,10 @@ func (w *WithTransaction) DeleteEmailChange(ctx context.Context, account *model.
 type EmailOps struct {
 	writeDB               *sql.DB
 	updateEmailRepository *repository.UpdateEmailRepository
-	accountRepository     *repository.AccountRepository
-	sessionRepository     *repository.SessionRepository
 }
 
-func (e *EmailOps) Init(updateEmailRepository *repository.UpdateEmailRepository, accountRepository *repository.AccountRepository, sessionRepository *repository.SessionRepository) {
-	e.updateEmailRepository = updateEmailRepository
-	e.accountRepository = accountRepository
-	e.sessionRepository = sessionRepository
+func (e *EmailOps) SetWriteDB(db *sql.DB) {
+	e.writeDB = db
 }
 
 func (e *EmailOps) requestEmailChange(ctx context.Context, db types.SQLExecutor, account *model.Account, newEmailAddress string) (*model.UpdateEmail, error) {
@@ -90,11 +85,7 @@ func (e *EmailOps) RequestEmailChange(ctx context.Context, account *model.Accoun
 	return e.requestEmailChange(ctx, e.writeDB, account, newEmailAddress)
 }
 
-func (e *EmailOps) confirmEmailChange(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, accountUUID string, token string) error {
-	account, errFind := e.accountRepository.FindByUUID(accountUUID)
-	if errFind != nil {
-		return errFind
-	}
+func (e *EmailOps) confirmEmailChange(ctx context.Context, db types.SQLExecutor, account *model.Account, token string) error {
 
 	request, errFind := e.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
@@ -116,12 +107,6 @@ func (e *EmailOps) confirmEmailChange(ctx context.Context, pipe redis.Pipeliner,
 		return errValidate
 	}
 
-	account.SetEmail(request.NewEmailAddress)
-	errUpdate := e.accountRepository.Update(ctx, pipe, db, account)
-	if errUpdate != nil {
-		return errUpdate
-	}
-
 	request.SetProcessed()
 	errUpdateTicket := e.updateEmailRepository.UpdateRequest(ctx, db, request)
 	if errUpdateTicket != nil {
@@ -134,11 +119,13 @@ func (e *EmailOps) confirmEmailChange(ctx context.Context, pipe redis.Pipeliner,
 		return errRevoke
 	}
 
+	account.SetEmail(request.NewEmailAddress)
+
 	return nil
 }
 
 func (e *EmailOps) ConfirmEmailChange(ctx context.Context, accountUUID string, token string) error {
-	return e.confirmEmailChange(ctx, nil, e.writeDB, accountUUID, token)
+	return e.confirmEmailChange(ctx, e.writeDB, accountUUID, token)
 }
 
 func (e *EmailOps) revokeEmailChange(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, accountUUID string, revokeToken string) error {
@@ -158,10 +145,6 @@ func (e *EmailOps) revokeEmailChange(ctx context.Context, pipe redis.Pipeliner, 
 	}
 
 	account.SetEmail(request.PreviousEmailAddress)
-	errUpdate := e.accountRepository.Update(ctx, pipe, db, account)
-	if errUpdate != nil {
-		return errUpdate
-	}
 
 	errDeleteTicket := e.updateEmailRepository.DeleteAllRequest(ctx, db, account)
 	if errDeleteTicket != nil {
@@ -189,9 +172,8 @@ func (e *EmailOps) DeleteEmailChange(ctx context.Context, account *model.Account
 	return e.deleteEmailChange(ctx, e.writeDB, account)
 }
 
-func New(repositoryPool *database.RepositoryPool, writeDB *sql.DB) *EmailOps {
+func New(repositoryPool *repository.RepositoryPool) *EmailOps {
 	return &EmailOps{
-		writeDB:               writeDB,
 		updateEmailRepository: repositoryPool.UpdateEmailRepository,
 		accountRepository:     repositoryPool.AccountRepository,
 		sessionRepository:     repositoryPool.SessionRepository,

@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/cache"
-	"github.com/21strive/commonuser/internal/database"
+	"github.com/21strive/commonuser/internal/fetcher"
 	"github.com/21strive/commonuser/internal/model"
+	"github.com/21strive/commonuser/internal/repository"
 	"github.com/21strive/commonuser/pkg/account"
 	"github.com/21strive/commonuser/pkg/auth"
 	"github.com/21strive/commonuser/pkg/email"
@@ -82,64 +82,77 @@ func IsResetPasswordTicketNotFound(err error) bool {
 	return errors.Is(err, model.ResetPasswordTicketNotFound)
 }
 
-type Service struct {
-	writeDB        *sql.DB
-	cachePool      *cache.CachePool
-	fetcherPool    *cache.FetcherPool
-	repositoryPool *database.RepositoryPool
-	config         *config.App
+type App struct {
+	accountOps      *account.AccountOps
+	authOps         *auth.AuthOps
+	sessionOps      *session.SessionOps
+	verificationOps *verification.VerificationOps
+	emailOps        *email.EmailOps
+	passwordOps     *password.PasswordOps
+
+	config *config.App
 }
 
-func (s *Service) WithWriteDB(db *sql.DB) {
-	s.writeDB = db
+func (s *App) WithWriteDB(writeDB *sql.DB) {
+	s.accountOps.SetWriteDB(writeDB)
 }
 
-func (s *Service) AccountBase() *redifu.Base[*model.Account] {
-	return s.repositoryPool.AccountRepository.GetBase()
+func (s *App) AccountBase() *redifu.Base[*model.Account] {
+	return s.accountOps.GetAccountBase()
 }
 
-func (s *Service) SessionBase() *redifu.Base[*model.Session] {
-	return s.repositoryPool.SessionRepository.GetBase()
+func (s *App) SessionBase() *redifu.Base[*model.Session] {
+	return s.sessionOps.GetSessionBase()
 }
 
-func (s *Service) Config() *config.App {
+func (s *App) Config() *config.App {
 	return s.config
 }
 
 // Builder methods - return operation structs with service reference
-func (s *Service) Auth() *auth.AuthOps {
-	return auth.New(s.repositoryPool, s.config, s.writeDB)
+func (s *App) Auth() *auth.AuthOps {
+	return s.authOps
 }
 
-func (s *Service) Account() *account.AccountOps {
-	return account.New(s.repositoryPool, s.fetcherPool, s.writeDB)
+func (s *App) Account() *account.AccountOps {
+	return s.accountOps
 }
 
-func (s *Service) Session() *session.SessionOps {
-	return session.New(s.repositoryPool, s.fetcherPool, s.config, s.writeDB)
+func (s *App) Session() *session.SessionOps {
+	return s.sessionOps
 }
 
-func (s *Service) Verification() *verification.VerificationOps {
-	return verification.New(s.repositoryPool, s.config, s.writeDB)
+func (s *App) Verification() *verification.VerificationOps {
+	return s.verificationOps
 }
 
-func (s *Service) Email() *email.EmailOps {
-	return email.New(s.repositoryPool, s.writeDB)
+func (s *App) Email() *email.EmailOps {
+	return s.emailOps
 }
 
-func (s *Service) Password() *password.PasswordOps {
-	return password.New(s.repositoryPool, s.writeDB)
+func (s *App) Password() *password.PasswordOps {
+	return s.passwordOps
 }
 
-func New(readDB *sql.DB, redisClient redis.UniversalClient, app *config.App) *Service {
-	cachePool := cache.NewCachePool(redisClient, app)
-	repositories := database.NewRepositoryPool(readDB, redisClient, cachePool, app)
-	fetchers := cache.NewFetcherPool(redisClient, app)
+func New(readConnection *sql.DB, redisClient redis.UniversalClient, app *config.App) *App {
+	baseAccount := redifu.NewBase[*model.Account](redisClient, app.EntityName+":%s", app.RecordAge)
+	baseAccountReference := redifu.NewBase[*model.AccountReference](redisClient, app.EntityName+":username:%s", app.RecordAge)
+	baseSession := redifu.NewBase[*model.Session](redisClient, app.EntityName+":session:%s", app.TokenLifespan)
 
-	return &Service{
-		cachePool:      cachePool,
-		fetcherPool:    fetchers,
-		repositoryPool: repositories,
-		config:         app,
+	accountRep := repository.NewAccountRepository(readConnection, redisClient, baseAccount, baseAccountReference, app)
+	providerRep := repository.NewProviderRepository(readConnection, app)
+	verificationRep := repository.NewVerificationRepository(readConnection, app)
+	sessionRep := repository.NewSessionRepository(readConnection, redisClient, baseSession, app)
+	updateEmailRep := repository.NewUpdateEmailManager(readConnection, app)
+	resetPasswordRep := repository.NewResetPasswordRepository(readConnection, app)
+
+	return &App{
+		accountOps:      account.New(repositories, fetchers),
+		authOps:         auth.New(repositories, app),
+		sessionOps:      session.New(repositories, fetchers, app),
+		verificationOps: verification.New(repositories, app),
+		emailOps:        email.New(repositories),
+		passwordOps:     password.New(repositories),
+		config:          app,
 	}
 }
