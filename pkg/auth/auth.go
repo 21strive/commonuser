@@ -38,13 +38,6 @@ type AuthOps struct {
 	config             *config.App
 }
 
-func (o *AuthOps) Init(accountRepository *repository.AccountRepository, sessionRepository *repository.SessionRepository, providerRepository *repository.ProviderRepository, config *config.App) {
-	o.accountRepository = accountRepository
-	o.sessionRepository = sessionRepository
-	o.providerRepository = providerRepository
-	o.config = config
-}
-
 func (o *AuthOps) byProvider(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, issuer string, sub string, deviceInfo model.DeviceInfo) (string, string, error) {
 	providerFromDB, errFind := o.providerRepository.Find(sub, issuer)
 	if errFind != nil {
@@ -131,9 +124,9 @@ func (o *AuthOps) GenerateToken(ctx context.Context, pipe redis.Pipeliner, db ty
 	return accessToken, session.RefreshToken, nil
 }
 
-func New(repositoryPool *database.RepositoryPool, appConfig *config.App, writeDB ...*sql.DB) *AuthOps {
+func New(repositoryPool *database.RepositoryPool, appConfig *config.App, writeDB *sql.DB) *AuthOps {
 	return &AuthOps{
-		writeDB:            writeDB[0],
+		writeDB:            writeDB,
 		accountRepository:  repositoryPool.AccountRepository,
 		sessionRepository:  repositoryPool.SessionRepository,
 		providerRepository: repositoryPool.ProviderRepository,

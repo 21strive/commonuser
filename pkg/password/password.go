@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
 	"github.com/21strive/commonuser/internal/types"
@@ -37,16 +38,6 @@ type PasswordOps struct {
 	resetPasswordRepository *repository.ResetPasswordRepository
 	sessionRepository       *repository.SessionRepository
 	accountRepository       *repository.AccountRepository
-}
-
-func (pu *PasswordOps) Init(
-	resetPasswordRepository *repository.ResetPasswordRepository,
-	sessionRepository *repository.SessionRepository,
-	accountRepository *repository.AccountRepository,
-) {
-	pu.resetPasswordRepository = resetPasswordRepository
-	pu.sessionRepository = sessionRepository
-	pu.accountRepository = accountRepository
 }
 
 func (pu *PasswordOps) requestResetPassword(ctx context.Context, db types.SQLExecutor, account *model.Account, expiration *time.Time) (*model.ResetPassword, error) {
@@ -167,6 +158,11 @@ func (pu *PasswordOps) UpdateResetPasswordRequest(ctx context.Context, accountUU
 	return pu.updateResetPasswordRequest(ctx, nil, pu.writeDB, accountUUID, oldPassword, newPassword)
 }
 
-func New() *PasswordOps {
-	return &PasswordOps{}
+func New(repositoryPool *database.RepositoryPool, writeDB *sql.DB) *PasswordOps {
+	return &PasswordOps{
+		writeDB:                 writeDB,
+		resetPasswordRepository: repositoryPool.ResetPasswordRepository,
+		sessionRepository:       repositoryPool.SessionRepository,
+		accountRepository:       repositoryPool.AccountRepository,
+	}
 }

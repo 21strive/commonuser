@@ -189,9 +189,9 @@ func (e *EmailOps) DeleteEmailChange(ctx context.Context, account *model.Account
 	return e.deleteEmailChange(ctx, e.writeDB, account)
 }
 
-func New(repositoryPool *database.RepositoryPool, writeDB ...*sql.DB) *EmailOps {
+func New(repositoryPool *database.RepositoryPool, writeDB *sql.DB) *EmailOps {
 	return &EmailOps{
-		writeDB:               writeDB[0],
+		writeDB:               writeDB,
 		updateEmailRepository: repositoryPool.UpdateEmailRepository,
 		accountRepository:     repositoryPool.AccountRepository,
 		sessionRepository:     repositoryPool.SessionRepository,

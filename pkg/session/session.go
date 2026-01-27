@@ -2,37 +2,64 @@ package session
 
 import (
 	"context"
+	"database/sql"
 	"github.com/21strive/commonuser/config"
+	"github.com/21strive/commonuser/internal/cache"
+	"github.com/21strive/commonuser/internal/database"
 	"github.com/21strive/commonuser/internal/fetcher"
-	"github.com/21strive/commonuser/internal/interface"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
 	"github.com/21strive/commonuser/internal/types"
+	"github.com/redis/go-redis/v9"
 	"time"
 )
 
+type WithTranscation struct {
+	SessionOps *SessionOps
+	Tx         *sql.Tx
+}
+
+func (w *WithTranscation) Create(ctx context.Context, pipe redis.Pipeliner, session *model.Session) error {
+	return w.SessionOps.create(ctx, pipe, w.Tx, session)
+}
+
+func (w *WithTranscation) Ping(ctx context.Context, pipe redis.Pipeliner, sessionRandId string) error {
+	return w.SessionOps.ping(ctx, pipe, w.Tx, sessionRandId)
+}
+
+func (w *WithTranscation) Revoke(ctx context.Context, pipe redis.Pipeliner, sessionUUID string) error {
+	return w.SessionOps.revoke(ctx, pipe, w.Tx, sessionUUID)
+}
+
+func (w *WithTranscation) Refresh(ctx context.Context, pipe redis.Pipeliner, account *model.Account, sessionRandId string) (string, string, error) {
+	return w.SessionOps.refresh(ctx, pipe, w.Tx, account, sessionRandId)
+}
+
+func (w *WithTranscation) PurgeInvalid(ctx context.Context) error {
+	return w.SessionOps.purgeInvalid(ctx, w.Tx)
+}
+
 type SessionOps struct {
+	writeDB           *sql.DB
 	sessionRepository *repository.SessionRepository
 	sessionFetcher    *fetcher.SessionFetcher
 	config            *config.App
 }
 
-func (s *SessionOps) Init(
-	sessionRepository *repository.SessionRepository,
-	sessionFetcher *fetcher.SessionFetcher,
-	config *config.App,
-) {
-	s.sessionRepository = sessionRepository
-	s.sessionFetcher = sessionFetcher
-	s.config = config
+func (s *SessionOps) WithTransaction(tx *sql.Tx) *WithTranscation {
+	return &WithTranscation{SessionOps: s, Tx: tx}
 }
 
-func (s *SessionOps) Create(ctx context.Context, db types.SQLExecutor, session *model.Session) error {
-	return s.sessionRepository.Create(ctx, db, session)
+func (s *SessionOps) create(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, session *model.Session) error {
+	return s.sessionRepository.Create(ctx, pipe, db, session)
 }
 
-func (s *SessionOps) Ping(ctx context.Context, db types.SQLExecutor, sessionRandId string) error {
-	sessionFromDB, errFind := s.sessionRepository.FindByRandId(ctx, sessionRandId)
+func (s *SessionOps) Create(ctx context.Context, session *model.Session) error {
+	return s.create(ctx, nil, s.writeDB, session)
+}
+
+func (s *SessionOps) ping(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, sessionRandId string) error {
+	sessionFromDB, errFind := s.sessionRepository.FindByRandId(ctx, pipe, sessionRandId)
 	if errFind != nil {
 		return errFind
 	}
@@ -42,22 +69,30 @@ func (s *SessionOps) Ping(ctx context.Context, db types.SQLExecutor, sessionRand
 	}
 
 	sessionFromDB.SetLastActiveAt(time.Now().UTC())
-	return s.sessionRepository.Update(ctx, db, sessionFromDB)
+	return s.sessionRepository.Update(ctx, pipe, db, sessionFromDB)
 }
 
-func (s *SessionOps) Revoke(ctx context.Context, db types.SQLExecutor, sessionUUID string) error {
-	session, errFind := s.sessionRepository.FindByUUID(ctx, sessionUUID)
+func (s *SessionOps) Ping(ctx context.Context, sessionRandId string) error {
+	return s.ping(ctx, nil, s.writeDB, sessionRandId)
+}
+
+func (s *SessionOps) revoke(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, sessionUUID string) error {
+	session, errFind := s.sessionRepository.FindByUUID(ctx, pipe, sessionUUID)
 	if errFind != nil {
 		return errFind
 	}
 
 	session.SetUpdatedAt(time.Now().UTC())
 	session.Revoke()
-	return s.sessionRepository.Update(ctx, db, session)
+	return s.sessionRepository.Update(ctx, pipe, db, session)
 }
 
-func (s *SessionOps) Refresh(ctx context.Context, db types.SQLExecutor, account *model.Account, sessionRandId string) (string, string, error) {
-	sessionFromDB, errFind := s.sessionRepository.FindByRandId(ctx, sessionRandId)
+func (s *SessionOps) Revoke(ctx context.Context, sessionUUID string) error {
+	return s.revoke(ctx, nil, s.writeDB, sessionUUID)
+}
+
+func (s *SessionOps) refresh(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account, sessionRandId string) (string, string, error) {
+	sessionFromDB, errFind := s.sessionRepository.FindByRandId(ctx, pipe, sessionRandId)
 	if errFind != nil {
 		return "", "", errFind
 	}
@@ -69,7 +104,7 @@ func (s *SessionOps) Refresh(ctx context.Context, db types.SQLExecutor, account 
 	sessionFromDB.SetLastActiveAt(time.Now().UTC())
 	sessionFromDB.SetLifeSpan(s.config.TokenLifespan)
 	sessionFromDB.GenerateRefreshToken()
-	errUpdate := s.sessionRepository.Update(ctx, db, sessionFromDB)
+	errUpdate := s.sessionRepository.Update(ctx, pipe, db, sessionFromDB)
 	if errUpdate != nil {
 		return "", "", errUpdate
 	}
@@ -87,8 +122,16 @@ func (s *SessionOps) Refresh(ctx context.Context, db types.SQLExecutor, account 
 	return newAccessToken, sessionFromDB.RefreshToken, nil
 }
 
-func (s *SessionOps) PurgeInvalid(ctx context.Context, db types.SQLExecutor) error {
+func (s *SessionOps) Refresh(ctx context.Context, account *model.Account, sessionRandId string) (string, string, error) {
+	return s.refresh(ctx, nil, s.writeDB, account, sessionRandId)
+}
+
+func (s *SessionOps) purgeInvalid(ctx context.Context, db types.SQLExecutor) error {
 	return s.sessionRepository.PurgeInvalid(ctx, db)
+}
+
+func (s *SessionOps) PurgeInvalid(ctx context.Context) error {
+	return s.purgeInvalid(ctx, s.writeDB)
 }
 
 func (s *SessionOps) PingByCache(ctx context.Context, sessionRandId string) (*model.Session, error) {
@@ -106,6 +149,11 @@ func (s *SessionOps) PingByCache(ctx context.Context, sessionRandId string) (*mo
 	return sessionFromCache, nil
 }
 
-func New() *SessionOps {
-	return &SessionOps{}
+func New(repositoryPool *database.RepositoryPool, fetcherPool *cache.FetcherPool, config *config.App, writeDB *sql.DB) *SessionOps {
+	return &SessionOps{
+		writeDB:           writeDB,
+		sessionRepository: repositoryPool.SessionRepository,
+		sessionFetcher:    fetcherPool.SessionFetcher,
+		config:            config,
+	}
 }

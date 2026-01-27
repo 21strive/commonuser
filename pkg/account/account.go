@@ -42,11 +42,8 @@ type AccountOps struct {
 	accountFetcher         *fetcher.AccountFetcher
 }
 
-func (o *AccountOps) Init(accountRepository *repository.AccountRepository, providerRepository *repository.ProviderRepository, verificationRepository *repository.VerificationRepository, accountFetcher *fetcher.AccountFetcher) {
-	o.accountRepository = accountRepository
-	o.providerRepository = providerRepository
-	o.verificationRepository = verificationRepository
-	o.accountFetcher = accountFetcher
+func (o *AccountOps) New() *model.Account {
+	return model.NewAccount()
 }
 
 func (o *AccountOps) WithTransaction(pipe redis.Pipeliner, db *sql.Tx) *WithTransaction {
@@ -202,9 +199,9 @@ func (af *AccountFetchers) ByRandId(ctx context.Context, randId string) (*model.
 	return accountFromDB, nil
 }
 
-func New(repositoryPool *database.RepositoryPool, fetcherPool *cache.FetcherPool, writeDB ...*sql.DB) *AccountOps {
+func New(repositoryPool *database.RepositoryPool, fetcherPool *cache.FetcherPool, writeDB *sql.DB) *AccountOps {
 	return &AccountOps{
-		writeDB:                writeDB[0],
+		writeDB:                writeDB,
 		accountRepository:      repositoryPool.AccountRepository,
 		providerRepository:     repositoryPool.ProviderRepository,
 		verificationRepository: repositoryPool.VerificationRepository,
