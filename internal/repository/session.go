@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/fetcher"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/types"
 	"github.com/21strive/redifu"
@@ -116,13 +115,39 @@ func (sm *SessionRepository) scanSession(ctx context.Context, pipe redis.Pipelin
 }
 
 func (sm *SessionRepository) FindByRandId(ctx context.Context, pipe redis.Pipeliner, randId string) (*model.Session, error) {
-	row := sm.findByRandIdStmt.QueryRow(randId)
+	row, errQuery := sm.findByRandIdStmt.QueryContext(ctx, randId)
+	if errQuery != nil {
+		return nil, errQuery
+	}
 	return sm.scanSession(ctx, pipe, row)
 }
 
 func (sm *SessionRepository) FindByUUID(ctx context.Context, pipe redis.Pipeliner, uuid string) (*model.Session, error) {
-	row := sm.findByUUIDStmt.QueryRow(uuid)
+	row, errQuery := sm.findByUUIDStmt.QueryContext(ctx, uuid)
+	if errQuery != nil {
+		return nil, errQuery
+	}
 	return sm.scanSession(ctx, pipe, row)
+}
+
+func (sm *SessionRepository) FindManyByAccount(ctx context.Context, pipe redis.Pipeliner, accountUUID string) ([]*model.Session, error) {
+	rows, errQuery := sm.findByAccountUUIDStmt.QueryContext(ctx, accountUUID)
+	if errQuery != nil {
+		return nil, errQuery
+	}
+	defer rows.Close()
+
+	var sessions []*model.Session
+	for rows.Next() {
+		session, errScan := sm.scanSession(ctx, pipe, rows)
+		if errScan != nil {
+			return nil, errScan
+		}
+
+		sessions = append(sessions, session)
+	}
+
+	return sessions, nil
 }
 
 func (sm *SessionRepository) SeedByRandId(ctx context.Context, pipe redis.Pipeliner, randId string) error {

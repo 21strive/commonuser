@@ -7,6 +7,8 @@ import (
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
 	"github.com/21strive/commonuser/internal/types"
+	"github.com/21strive/commonuser/pkg/account"
+	"github.com/21strive/commonuser/pkg/session"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -19,12 +21,12 @@ func (w *WithTransaction) RequestEmailChange(ctx context.Context, account *model
 	return w.EmailOps.requestEmailChange(ctx, w.Tx, account, newEmailAddress)
 }
 
-func (w *WithTransaction) ConfirmEmailChange(ctx context.Context, pipe redis.Pipeliner, accountUUID string, token string) error {
-	return w.EmailOps.confirmEmailChange(ctx, pipe, w.Tx, accountUUID, token)
+func (w *WithTransaction) ConfirmEmailChange(ctx context.Context, pipe redis.Pipeliner, account *model.Account, token string) error {
+	return w.EmailOps.confirmEmailChange(ctx, pipe, w.Tx, account, token)
 }
 
-func (w *WithTransaction) RevokeEmailChange(ctx context.Context, pipe redis.Pipeliner, accountUUID string, revokeToken string) error {
-	return w.EmailOps.revokeEmailChange(ctx, pipe, w.Tx, accountUUID, revokeToken)
+func (w *WithTransaction) RevokeEmailChange(ctx context.Context, pipe redis.Pipeliner, account *model.Account, revokeToken string) error {
+	return w.EmailOps.revokeEmailChange(ctx, pipe, w.Tx, account, revokeToken)
 }
 
 func (w *WithTransaction) DeleteEmailChange(ctx context.Context, account *model.Account) error {
@@ -34,6 +36,8 @@ func (w *WithTransaction) DeleteEmailChange(ctx context.Context, account *model.
 type EmailOps struct {
 	writeDB               *sql.DB
 	updateEmailRepository *repository.UpdateEmailRepository
+	accountOps            *account.AccountOps
+	sessionOps            *session.SessionOps
 }
 
 func (e *EmailOps) SetWriteDB(db *sql.DB) {
@@ -85,7 +89,7 @@ func (e *EmailOps) RequestEmailChange(ctx context.Context, account *model.Accoun
 	return e.requestEmailChange(ctx, e.writeDB, account, newEmailAddress)
 }
 
-func (e *EmailOps) confirmEmailChange(ctx context.Context, db types.SQLExecutor, account *model.Account, token string) error {
+func (e *EmailOps) confirmEmailChange(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account, token string) error {
 
 	request, errFind := e.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
@@ -114,7 +118,12 @@ func (e *EmailOps) confirmEmailChange(ctx context.Context, db types.SQLExecutor,
 	}
 
 	// revoke all running sessions
-	errRevoke := e.sessionRepository.RevokeAll(ctx, db, account)
+	var errRevoke error
+	if pipe != nil {
+		errRevoke = e.sessionOps.WithTransaction(pipe, db.(*sql.Tx)).RevokeAll(ctx, account)
+	} else {
+		errRevoke = e.sessionOps.RevokeAll(ctx, account)
+	}
 	if errRevoke != nil {
 		return errRevoke
 	}
@@ -124,15 +133,11 @@ func (e *EmailOps) confirmEmailChange(ctx context.Context, db types.SQLExecutor,
 	return nil
 }
 
-func (e *EmailOps) ConfirmEmailChange(ctx context.Context, accountUUID string, token string) error {
-	return e.confirmEmailChange(ctx, e.writeDB, accountUUID, token)
+func (e *EmailOps) ConfirmEmailChange(ctx context.Context, account *model.Account, token string) error {
+	return e.confirmEmailChange(ctx, nil, e.writeDB, account, token)
 }
 
-func (e *EmailOps) revokeEmailChange(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, accountUUID string, revokeToken string) error {
-	account, errFind := e.accountRepository.FindByUUID(accountUUID)
-	if errFind != nil {
-		return errFind
-	}
+func (e *EmailOps) revokeEmailChange(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account, revokeToken string) error {
 
 	request, errFind := e.updateEmailRepository.FindRequest(account)
 	if errFind != nil {
@@ -151,8 +156,13 @@ func (e *EmailOps) revokeEmailChange(ctx context.Context, pipe redis.Pipeliner, 
 		return errDeleteTicket
 	}
 
-	// revoke all running sessions
-	errRevoke := e.sessionRepository.RevokeAll(ctx, db, account)
+	var errRevoke error
+	if pipe != nil {
+		errRevoke = e.sessionOps.WithTransaction(pipe, db.(*sql.Tx)).RevokeAll(ctx, account)
+	} else {
+		errRevoke = e.sessionOps.RevokeAll(ctx, account)
+	}
+
 	if errRevoke != nil {
 		return errRevoke
 	}
@@ -160,8 +170,8 @@ func (e *EmailOps) revokeEmailChange(ctx context.Context, pipe redis.Pipeliner, 
 	return nil
 }
 
-func (e *EmailOps) RevokeEmailChange(ctx context.Context, accountUUID string, revokeToken string) error {
-	return e.revokeEmailChange(ctx, nil, e.writeDB, accountUUID, revokeToken)
+func (e *EmailOps) RevokeEmailChange(ctx context.Context, account *model.Account, revokeToken string) error {
+	return e.revokeEmailChange(ctx, nil, e.writeDB, account, revokeToken)
 }
 
 func (e *EmailOps) deleteEmailChange(ctx context.Context, db types.SQLExecutor, account *model.Account) error {
@@ -172,10 +182,10 @@ func (e *EmailOps) DeleteEmailChange(ctx context.Context, account *model.Account
 	return e.deleteEmailChange(ctx, e.writeDB, account)
 }
 
-func New(repositoryPool *repository.RepositoryPool) *EmailOps {
+func New(updateEmailRepository *repository.UpdateEmailRepository, accountOps *account.AccountOps, sessionOps *session.SessionOps) *EmailOps {
 	return &EmailOps{
-		updateEmailRepository: repositoryPool.UpdateEmailRepository,
-		accountRepository:     repositoryPool.AccountRepository,
-		sessionRepository:     repositoryPool.SessionRepository,
+		updateEmailRepository: updateEmailRepository,
+		accountOps:            accountOps,
+		sessionOps:            sessionOps,
 	}
 }

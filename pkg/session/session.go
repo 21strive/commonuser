@@ -16,22 +16,27 @@ import (
 type WithTranscation struct {
 	SessionOps *SessionOps
 	Tx         *sql.Tx
+	pipe       redis.Pipeliner
 }
 
-func (w *WithTranscation) Create(ctx context.Context, pipe redis.Pipeliner, session *model.Session) error {
-	return w.SessionOps.create(ctx, pipe, w.Tx, session)
+func (w *WithTranscation) Create(ctx context.Context, session *model.Session) error {
+	return w.SessionOps.create(ctx, w.pipe, w.Tx, session)
 }
 
-func (w *WithTranscation) Ping(ctx context.Context, pipe redis.Pipeliner, sessionRandId string) error {
-	return w.SessionOps.ping(ctx, pipe, w.Tx, sessionRandId)
+func (w *WithTranscation) Ping(ctx context.Context, sessionRandId string) error {
+	return w.SessionOps.ping(ctx, w.pipe, w.Tx, sessionRandId)
 }
 
-func (w *WithTranscation) Revoke(ctx context.Context, pipe redis.Pipeliner, sessionUUID string) error {
-	return w.SessionOps.revoke(ctx, pipe, w.Tx, sessionUUID)
+func (w *WithTranscation) Revoke(ctx context.Context, sessionUUID string) error {
+	return w.SessionOps.revoke(ctx, w.pipe, w.Tx, sessionUUID)
 }
 
-func (w *WithTranscation) Refresh(ctx context.Context, pipe redis.Pipeliner, account *model.Account, sessionRandId string) (string, string, error) {
-	return w.SessionOps.refresh(ctx, pipe, w.Tx, account, sessionRandId)
+func (w *WithTranscation) RevokeAll(ctx context.Context, account *model.Account) error {
+	return w.SessionOps.revokeAll(ctx, w.pipe, w.Tx, account)
+}
+
+func (w *WithTranscation) Refresh(ctx context.Context, account *model.Account, sessionRandId string) (string, string, error) {
+	return w.SessionOps.refresh(ctx, w.pipe, w.Tx, account, sessionRandId)
 }
 
 func (w *WithTranscation) PurgeInvalid(ctx context.Context) error {
@@ -53,8 +58,8 @@ func (s *SessionOps) GetSessionBase() *redifu.Base[*model.Session] {
 	return s.sessionRepository.GetBase()
 }
 
-func (s *SessionOps) WithTransaction(tx *sql.Tx) *WithTranscation {
-	return &WithTranscation{SessionOps: s, Tx: tx}
+func (s *SessionOps) WithTransaction(pipe redis.Pipeliner, tx *sql.Tx) *WithTranscation {
+	return &WithTranscation{SessionOps: s, pipe: pipe, Tx: tx}
 }
 
 func (s *SessionOps) create(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, session *model.Session) error {
@@ -98,8 +103,26 @@ func (s *SessionOps) Revoke(ctx context.Context, sessionUUID string) error {
 	return s.revoke(ctx, nil, s.writeDB, sessionUUID)
 }
 
+func (s *SessionOps) revokeAll(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account) error {
+	sessions, errFind := s.sessionRepository.FindManyByAccount(ctx, nil, account.GetUUID())
+	if errFind != nil {
+		return errFind
+	}
+
+	for _, session := range sessions {
+		session.SetUpdatedAt(time.Now().UTC())
+		session.Revoke()
+		errUpdate := s.sessionRepository.Update(ctx, pipe, db, session)
+		if errUpdate != nil {
+			return errUpdate
+		}
+	}
+
+	return nil
+}
+
 func (s *SessionOps) RevokeAll(ctx context.Context, account *model.Account) error {
-	// TODO: lanjut RevokeAll
+	return s.revokeAll(ctx, nil, s.writeDB, account)
 }
 
 func (s *SessionOps) refresh(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account, sessionRandId string) (string, string, error) {
@@ -114,7 +137,10 @@ func (s *SessionOps) refresh(ctx context.Context, pipe redis.Pipeliner, db types
 	sessionFromDB.SetUpdatedAt(time.Now().UTC())
 	sessionFromDB.SetLastActiveAt(time.Now().UTC())
 	sessionFromDB.SetLifeSpan(s.config.TokenLifespan)
-	sessionFromDB.GenerateRefreshToken()
+	errGenerate := sessionFromDB.GenerateRefreshToken()
+	if errGenerate != nil {
+		return "", "", errGenerate
+	}
 	errUpdate := s.sessionRepository.Update(ctx, pipe, db, sessionFromDB)
 	if errUpdate != nil {
 		return "", "", errUpdate

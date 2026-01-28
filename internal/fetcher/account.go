@@ -12,12 +12,12 @@ import (
 
 type AccountFetcher struct {
 	redis         redis.UniversalClient
-	base          *redifu.Base[model.Account]
-	baseReference *redifu.Base[model.AccountReference]
+	base          *redifu.Base[*model.Account]
+	baseReference *redifu.Base[*model.AccountReference]
 	entityName    string
 }
 
-func (af *AccountFetcher) Base() *redifu.Base[model.Account] {
+func (af *AccountFetcher) Base() *redifu.Base[*model.Account] {
 	return af.base
 }
 
@@ -42,7 +42,7 @@ func (af *AccountFetcher) FetchByUsername(ctx context.Context, username string) 
 	if err != nil {
 		return nil, err
 	}
-	return &account, nil
+	return account, nil
 }
 
 func (af *AccountFetcher) FetchByRandId(ctx context.Context, randId string) (*model.Account, error) {
@@ -53,7 +53,7 @@ func (af *AccountFetcher) FetchByRandId(ctx context.Context, randId string) (*mo
 		}
 		return nil, err
 	}
-	return &account, nil
+	return account, nil
 }
 
 func (af *AccountFetcher) IsAccountMissing(ctx context.Context, randId string) (bool, error) {
@@ -64,11 +64,11 @@ func (af *AccountFetcher) AccountExists(ctx context.Context, randId string) erro
 	return af.base.Exists(ctx, randId)
 }
 
-func NewAccountFetchers(redis redis.UniversalClient, app *config.App) *AccountFetcher {
-	base := redifu.NewBase[model.Account](redis, app.EntityName+":%s", app.RecordAge)
+func NewAccountFetchers(redis redis.UniversalClient, baseAccount *redifu.Base[*model.Account], baseReference *redifu.Base[*model.AccountReference], app *config.App) *AccountFetcher {
 	return &AccountFetcher{
-		redis:      redis,
-		base:       base,
-		entityName: app.EntityName,
+		redis:         redis,
+		base:          baseAccount,
+		baseReference: baseReference,
+		entityName:    app.EntityName,
 	}
 }

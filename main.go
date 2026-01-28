@@ -8,7 +8,6 @@ import (
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/repository"
 	"github.com/21strive/commonuser/pkg/account"
-	"github.com/21strive/commonuser/pkg/auth"
 	"github.com/21strive/commonuser/pkg/email"
 	"github.com/21strive/commonuser/pkg/password"
 	"github.com/21strive/commonuser/pkg/session"
@@ -84,7 +83,6 @@ func IsResetPasswordTicketNotFound(err error) bool {
 
 type App struct {
 	accountOps      *account.AccountOps
-	authOps         *auth.AuthOps
 	sessionOps      *session.SessionOps
 	verificationOps *verification.VerificationOps
 	emailOps        *email.EmailOps
@@ -109,11 +107,6 @@ func (s *App) Config() *config.App {
 	return s.config
 }
 
-// Builder methods - return operation structs with service reference
-func (s *App) Auth() *auth.AuthOps {
-	return s.authOps
-}
-
 func (s *App) Account() *account.AccountOps {
 	return s.accountOps
 }
@@ -134,25 +127,33 @@ func (s *App) Password() *password.PasswordOps {
 	return s.passwordOps
 }
 
-func New(readConnection *sql.DB, redisClient redis.UniversalClient, app *config.App) *App {
-	baseAccount := redifu.NewBase[*model.Account](redisClient, app.EntityName+":%s", app.RecordAge)
-	baseAccountReference := redifu.NewBase[*model.AccountReference](redisClient, app.EntityName+":username:%s", app.RecordAge)
-	baseSession := redifu.NewBase[*model.Session](redisClient, app.EntityName+":session:%s", app.TokenLifespan)
+func New(readConnection *sql.DB, redisClient redis.UniversalClient, config *config.App) *App {
+	baseAccount := redifu.NewBase[*model.Account](redisClient, config.EntityName+":%s", config.RecordAge)
+	baseAccountReference := redifu.NewBase[*model.AccountReference](redisClient, config.EntityName+":username:%s", config.RecordAge)
+	baseSession := redifu.NewBase[*model.Session](redisClient, config.EntityName+":session:%s", config.TokenLifespan)
 
-	accountRep := repository.NewAccountRepository(readConnection, redisClient, baseAccount, baseAccountReference, app)
-	providerRep := repository.NewProviderRepository(readConnection, app)
-	verificationRep := repository.NewVerificationRepository(readConnection, app)
-	sessionRep := repository.NewSessionRepository(readConnection, redisClient, baseSession, app)
-	updateEmailRep := repository.NewUpdateEmailManager(readConnection, app)
-	resetPasswordRep := repository.NewResetPasswordRepository(readConnection, app)
+	accountRep := repository.NewAccountRepository(readConnection, redisClient, baseAccount, baseAccountReference, config)
+	providerRep := repository.NewProviderRepository(readConnection, config)
+	verificationRep := repository.NewVerificationRepository(readConnection, config)
+	sessionRep := repository.NewSessionRepository(readConnection, redisClient, baseSession, config)
+	updateEmailRep := repository.NewUpdateEmailManager(readConnection, config)
+	resetPasswordRep := repository.NewResetPasswordRepository(readConnection, config)
+
+	accountFetcher := fetcher.NewAccountFetchers(redisClient, baseAccount, baseAccountReference, config)
+	sessionFetcher := fetcher.NewSessionFetcher(baseSession)
+
+	sessionOps := session.New(sessionRep, sessionFetcher, config)
+	accountOps := account.New(accountRep, providerRep, accountFetcher, sessionOps, config)
+	verificationOps := verification.New(verificationRep, accountOps, config)
+	emailOps := email.New(updateEmailRep, accountOps, sessionOps)
+	passwordOps := password.New(resetPasswordRep, sessionOps, accountOps)
 
 	return &App{
-		accountOps:      account.New(repositories, fetchers),
-		authOps:         auth.New(repositories, app),
-		sessionOps:      session.New(repositories, fetchers, app),
-		verificationOps: verification.New(repositories, app),
-		emailOps:        email.New(repositories),
-		passwordOps:     password.New(repositories),
-		config:          app,
+		accountOps:      accountOps,
+		sessionOps:      sessionOps,
+		verificationOps: verificationOps,
+		emailOps:        emailOps,
+		passwordOps:     passwordOps,
+		config:          config,
 	}
 }

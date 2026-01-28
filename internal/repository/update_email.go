@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/interface"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/types"
 )

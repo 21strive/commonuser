@@ -2,10 +2,8 @@ package fetcher
 
 import (
 	"context"
-	"github.com/21strive/commonuser/config"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/redifu"
-	"github.com/redis/go-redis/v9"
 )
 
 type SessionFetcher struct {
@@ -20,9 +18,8 @@ func (sf *SessionFetcher) FetchByRandId(ctx context.Context, randId string) (*mo
 	return session, nil
 }
 
-func NewSessionFetcher(client redis.UniversalClient, app *config.App) *SessionFetcher {
-	base := redifu.NewBase[*model.Session](client, app.EntityName+":session:%s", app.RecordAge)
+func NewSessionFetcher(baseSession *redifu.Base[*model.Session]) *SessionFetcher {
 	return &SessionFetcher{
-		base: base,
+		base: baseSession,
 	}
 }

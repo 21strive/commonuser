@@ -26,12 +26,12 @@ func (w *WithTransaction) ValidateResetPassword(ctx context.Context, pipe redis.
 	return w.PasswordOps.validateResetPassword(ctx, pipe, w.Tx, account, newPassword, token)
 }
 
-func (w *WithTransaction) DeleteResetPasswordRequest(ctx context.Context, accountUUID string) error {
-	return w.PasswordOps.deleteResetPasswordRequest(ctx, w.Tx, accountUUID)
+func (w *WithTransaction) DeleteResetPasswordRequest(ctx context.Context, account *model.Account) error {
+	return w.PasswordOps.deleteResetPasswordRequest(ctx, w.Tx, account)
 }
 
-func (w *WithTransaction) UpdateResetPasswordRequest(ctx context.Context, pipe redis.Pipeliner, accountUUID string, oldPassword string, newPassword string) error {
-	return w.PasswordOps.updateResetPasswordRequest(ctx, pipe, w.Tx, accountUUID, oldPassword, newPassword)
+func (w *WithTransaction) UpdateResetPasswordRequest(ctx context.Context, pipe redis.Pipeliner, account *model.Account, oldPassword string, newPassword string) error {
+	return w.PasswordOps.updateResetPasswordRequest(ctx, pipe, w.Tx, account, oldPassword, newPassword)
 }
 
 type PasswordOps struct {
@@ -115,9 +115,10 @@ func (pu *PasswordOps) validateResetPassword(ctx context.Context, pipe redis.Pip
 
 	var errRevoke error
 	if pipe != nil {
-		errRevoke = pu.sessionOps.Revoke
+		errRevoke = pu.sessionOps.WithTransaction(pipe, db.(*sql.Tx)).RevokeAll(ctx, account)
+	} else {
+		errRevoke = pu.sessionOps.RevokeAll(ctx, account)
 	}
-	errRevoke := pu.sessionRepository.RevokeAll(ctx, db, account)
 	if errRevoke != nil {
 		return errRevoke
 	}
@@ -129,26 +130,16 @@ func (pu *PasswordOps) ValidateResetPassword(ctx context.Context, account *model
 	return pu.validateResetPassword(ctx, nil, pu.writeDB, account, newPassword, token)
 }
 
-func (pu *PasswordOps) deleteResetPasswordRequest(ctx context.Context, db types.SQLExecutor, accountUUID string) error {
-	accountFromDB, errFind := pu.accountRepository.FindByUUID(accountUUID)
-	if errFind != nil {
-		return errFind
-	}
-
-	return pu.resetPasswordRepository.DeleteAllRequests(ctx, db, accountFromDB)
+func (pu *PasswordOps) deleteResetPasswordRequest(ctx context.Context, db types.SQLExecutor, account *model.Account) error {
+	return pu.resetPasswordRepository.DeleteAllRequests(ctx, db, account)
 }
 
-func (pu *PasswordOps) DeleteResetPasswordRequest(ctx context.Context, accountUUID string) error {
-	return pu.deleteResetPasswordRequest(ctx, pu.writeDB, accountUUID)
+func (pu *PasswordOps) DeleteResetPasswordRequest(ctx context.Context, account *model.Account) error {
+	return pu.deleteResetPasswordRequest(ctx, pu.writeDB, account)
 }
 
-func (pu *PasswordOps) updateResetPasswordRequest(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, accountUUID string, oldPassword string, newPassword string) error {
-	accountFromDB, errFind := pu.accountRepository.FindByUUID(accountUUID)
-	if errFind != nil {
-		return errFind
-	}
-
-	isValid, errValidate := accountFromDB.VerifyPassword(oldPassword)
+func (pu *PasswordOps) updateResetPasswordRequest(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account, oldPassword string, newPassword string) error {
+	isValid, errValidate := account.VerifyPassword(oldPassword)
 	if errValidate != nil {
 		return errValidate
 	}
@@ -156,19 +147,30 @@ func (pu *PasswordOps) updateResetPasswordRequest(ctx context.Context, pipe redi
 		return model.Unauthorized
 	}
 
-	accountFromDB.SetPassword(newPassword)
+	errSetPassword := account.SetPassword(newPassword)
+	if errSetPassword != nil {
+		return errSetPassword
+	}
 
-	// revoke all running sessions
-	errRevoke := pu.sessionRepository.RevokeAll(ctx, db, accountFromDB)
+	var errRevoke error
+	if pipe != nil {
+		errRevoke = pu.sessionOps.WithTransaction(pipe, db.(*sql.Tx)).RevokeAll(ctx, account)
+	} else {
+		errRevoke = pu.sessionOps.RevokeAll(ctx, account)
+	}
 	if errRevoke != nil {
 		return errRevoke
 	}
 
-	return pu.accountRepository.Update(ctx, pipe, db, accountFromDB)
+	if pipe != nil {
+		return pu.accountOps.WithTransaction(pipe, db.(*sql.Tx)).Update(ctx, account)
+	} else {
+		return pu.accountOps.Update(ctx, account)
+	}
 }
 
-func (pu *PasswordOps) UpdateResetPasswordRequest(ctx context.Context, accountUUID string, oldPassword string, newPassword string) error {
-	return pu.updateResetPasswordRequest(ctx, nil, pu.writeDB, accountUUID, oldPassword, newPassword)
+func (pu *PasswordOps) UpdateResetPasswordRequest(ctx context.Context, account *model.Account, oldPassword string, newPassword string) error {
+	return pu.updateResetPasswordRequest(ctx, nil, pu.writeDB, account, oldPassword, newPassword)
 }
 
 func New(resetPasswordRepository *repository.ResetPasswordRepository, sessionOps *session.SessionOps, accountOps *account.AccountOps) *PasswordOps {

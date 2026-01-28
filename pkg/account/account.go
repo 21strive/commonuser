@@ -257,7 +257,7 @@ func (au *Authentication) GenerateToken(ctx context.Context, pipe redis.Pipeline
 
 	var errCreateSession error
 	if pipe != nil {
-		errCreateSession = au.accountOps.sessionOps.WithTransaction(db.(*sql.Tx)).Create(ctx, pipe, session)
+		errCreateSession = au.accountOps.sessionOps.WithTransaction(pipe, db.(*sql.Tx)).Create(ctx, session)
 	} else {
 		errCreateSession = au.accountOps.sessionOps.Create(ctx, session)
 	}

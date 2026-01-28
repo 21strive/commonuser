@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/21strive/commonuser/config"
-	"github.com/21strive/commonuser/internal/fetcher"
 	"github.com/21strive/commonuser/internal/model"
 	"github.com/21strive/commonuser/internal/types"
 	"github.com/21strive/redifu"
