@@ -87,6 +87,7 @@ type App struct {
 	verificationOps *verification.VerificationOps
 	emailOps        *email.EmailOps
 	passwordOps     *password.PasswordOps
+	Account         *account.AccountOps
 
 	config *config.App
 }
@@ -107,9 +108,9 @@ func (s *App) Config() *config.App {
 	return s.config
 }
 
-func (s *App) Account() *account.AccountOps {
-	return s.accountOps
-}
+//func (s *App) Account() *account.AccountOps {
+//	return s.accountOps
+//}
 
 func (s *App) Session() *session.SessionOps {
 	return s.sessionOps
@@ -155,5 +156,6 @@ func New(readConnection *sql.DB, redisClient redis.UniversalClient, config *conf
 		emailOps:        emailOps,
 		passwordOps:     passwordOps,
 		config:          config,
+		Account:         accountOps,
 	}
 }

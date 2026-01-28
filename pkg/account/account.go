@@ -41,8 +41,11 @@ type AccountOps struct {
 	accountRepository  *repository.AccountRepository
 	providerRepository *repository.ProviderRepository
 	accountFetcher     *fetcher.AccountFetcher
-	sessionOps         *session.SessionOps
 	config             *config.App
+
+	Authenticate *Authentication
+	Find         *Find
+	Fetch        *Fetch
 }
 
 func (o *AccountOps) New() *model.Account {
@@ -51,6 +54,7 @@ func (o *AccountOps) New() *model.Account {
 
 func (o *AccountOps) SetWriteDB(db *sql.DB) {
 	o.writeDB = db
+	o.Authenticate.SetWriteDB(db)
 }
 
 func (o *AccountOps) GetAccountBase() *redifu.Base[*model.Account] {
@@ -106,14 +110,6 @@ func (o *AccountOps) Update(ctx context.Context, account *model.Account) error {
 	return o.update(ctx, nil, o.writeDB, account)
 }
 
-func (o *AccountOps) Fetch() *AccountFetchers {
-	return &AccountFetchers{o: o}
-}
-
-func (o *AccountOps) Find() *AccountFinder {
-	return &AccountFinder{o: o}
-}
-
 func (o *AccountOps) delete(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, account *model.Account) error {
 	errDel := o.accountRepository.Delete(ctx, pipe, db, account)
 	if errDel != nil {
@@ -127,36 +123,32 @@ func (o *AccountOps) Delete(ctx context.Context, account *model.Account) error {
 	return o.delete(ctx, nil, o.writeDB, account)
 }
 
-func (o *AccountOps) Authenticate() *Authentication {
-	return &Authentication{accountOps: o}
+type Find struct {
+	accountRepository *repository.AccountRepository
 }
 
-type AccountFinder struct {
-	o *AccountOps
+func (af *Find) ByUsername(username string) (*model.Account, error) {
+	return af.accountRepository.FindByUsername(username)
 }
 
-func (af *AccountFinder) ByUsername(username string) (*model.Account, error) {
-	return af.o.accountRepository.FindByUsername(username)
+func (af *Find) ByRandId(randId string) (*model.Account, error) {
+	return af.accountRepository.FindByRandId(randId)
 }
 
-func (af *AccountFinder) ByRandId(randId string) (*model.Account, error) {
-	return af.o.accountRepository.FindByRandId(randId)
+func (af *Find) ByUUID(uuid string) (*model.Account, error) {
+	return af.accountRepository.FindByUUID(uuid)
 }
 
-func (af *AccountFinder) ByUUID(uuid string) (*model.Account, error) {
-	return af.o.accountRepository.FindByUUID(uuid)
+func (af *Find) ByEmail(email string) (*model.Account, error) {
+	return af.accountRepository.FindByEmail(email)
 }
 
-func (af *AccountFinder) ByEmail(email string) (*model.Account, error) {
-	return af.o.accountRepository.FindByEmail(email)
+type Fetch struct {
+	accountFetcher *fetcher.AccountFetcher
 }
 
-type AccountFetchers struct {
-	o *AccountOps
-}
-
-func (af *AccountFetchers) ByUsername(ctx context.Context, username string) (*model.Account, error) {
-	accountFromDB, err := af.o.accountFetcher.FetchByUsername(ctx, username)
+func (af *Fetch) ByUsername(ctx context.Context, username string) (*model.Account, error) {
+	accountFromDB, err := af.accountFetcher.FetchByUsername(ctx, username)
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +156,8 @@ func (af *AccountFetchers) ByUsername(ctx context.Context, username string) (*mo
 	return accountFromDB, nil
 }
 
-func (af *AccountFetchers) ByRandId(ctx context.Context, randId string) (*model.Account, error) {
-	accountFromDB, err := af.o.accountFetcher.FetchByRandId(ctx, randId)
+func (af *Fetch) ByRandId(ctx context.Context, randId string) (*model.Account, error) {
+	accountFromDB, err := af.accountFetcher.FetchByRandId(ctx, randId)
 	if err != nil {
 		return nil, err
 	}
@@ -182,55 +174,77 @@ type AuthenticationWithPipe struct {
 	tx       *sql.Tx
 }
 
+func (aup *AuthenticationWithPipe) ByProvider(ctx context.Context, issuer string, sub string, deviceInfo *model.DeviceInfo) (string, string, error) {
+	return aup.authOps.byProvider(ctx, aup.pipeline, aup.tx, issuer, sub, deviceInfo)
+}
+
+func (aup *AuthenticationWithPipe) ByUsername(ctx context.Context, username string, password string, deviceInfo *model.DeviceInfo) (string, string, error) {
+	return aup.authOps.byUsername(ctx, aup.pipeline, aup.tx, username, password, deviceInfo)
+}
+
+func (aup *AuthenticationWithPipe) ByEmail(ctx context.Context, email string, password string, deviceInfo *model.DeviceInfo) (string, string, error) {
+	return aup.authOps.byEmail(ctx, aup.pipeline, aup.tx, email, password, deviceInfo)
+}
+
+// TODO: AuthenticationByTransaction belum ke isi
+
 type Authentication struct {
-	accountOps *AccountOps
+	writeDB            *sql.DB
+	accountRepository  *repository.AccountRepository
+	providerRepository *repository.ProviderRepository
+	sessionOps         *session.SessionOps
+	config             *config.App
 }
 
-func (au *Authentication) byProvider(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, issuer string, sub string, deviceInfo model.DeviceInfo) (string, string, error) {
-	providerFromDB, errFind := au.accountOps.providerRepository.Find(sub, issuer)
+func (au *Authentication) SetWriteDB(db *sql.DB) {
+	au.writeDB = db
+}
+
+func (au *Authentication) byProvider(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, issuer string, sub string, deviceInfo *model.DeviceInfo) (string, string, error) {
+	providerFromDB, errFind := au.providerRepository.Find(sub, issuer)
 	if errFind != nil {
 		return "", "", errFind
 	}
 
-	accountFromDB, errFind := au.accountOps.accountRepository.FindByUUID(providerFromDB.AccountUUID)
+	accountFromDB, errFind := au.accountRepository.FindByUUID(providerFromDB.AccountUUID)
 	if errFind != nil {
 		return "", "", errFind
 	}
 
-	return au.GenerateToken(ctx, pipe, db, accountFromDB, deviceInfo.DeviceId, deviceInfo.DeviceType, deviceInfo.UserAgent)
+	return au.generateToken(ctx, pipe, db, accountFromDB, deviceInfo.DeviceId, deviceInfo.DeviceType, deviceInfo.UserAgent)
 }
 
-func (au *Authentication) ByProvider(ctx context.Context, issuer string, sub string, deviceInfo model.DeviceInfo) (string, string, error) {
-	return au.byProvider(ctx, nil, au.accountOps.writeDB, issuer, sub, deviceInfo)
+func (au *Authentication) ByProvider(ctx context.Context, issuer string, sub string, deviceInfo *model.DeviceInfo) (string, string, error) {
+	return au.byProvider(ctx, nil, au.writeDB, issuer, sub, deviceInfo)
 }
 
-func (au *Authentication) byUsername(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, username string, password string, deviceInfo model.DeviceInfo) (string, string, error) {
-	accountFromDB, errFindUser := au.accountOps.accountRepository.FindByUsername(username)
+func (au *Authentication) byUsername(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, username string, password string, deviceInfo *model.DeviceInfo) (string, string, error) {
+	accountFromDB, errFindUser := au.accountRepository.FindByUsername(username)
 	if errFindUser != nil {
 		return "", "", errFindUser
 	}
 
-	return au.AuthenticatePassword(ctx, pipe, db, accountFromDB, password, deviceInfo)
+	return au.authenticatePassword(ctx, pipe, db, accountFromDB, password, deviceInfo)
 }
 
-func (au *Authentication) ByUsername(ctx context.Context, db types.SQLExecutor, username string, password string, deviceInfo model.DeviceInfo) (string, string, error) {
+func (au *Authentication) ByUsername(ctx context.Context, db types.SQLExecutor, username string, password string, deviceInfo *model.DeviceInfo) (string, string, error) {
 	return au.byUsername(ctx, nil, db, username, password, deviceInfo)
 }
 
-func (au *Authentication) byEmail(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, email string, password string, deviceInfo model.DeviceInfo) (string, string, error) {
-	accountFromDB, errFindUser := au.accountOps.accountRepository.FindByEmail(email)
+func (au *Authentication) byEmail(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, email string, password string, deviceInfo *model.DeviceInfo) (string, string, error) {
+	accountFromDB, errFindUser := au.accountRepository.FindByEmail(email)
 	if errFindUser != nil {
 		return "", "", errFindUser
 	}
 
-	return au.AuthenticatePassword(ctx, pipe, db, accountFromDB, password, deviceInfo)
+	return au.authenticatePassword(ctx, pipe, db, accountFromDB, password, deviceInfo)
 }
 
-func (au *Authentication) ByEmail(ctx context.Context, email string, password string, deviceInfo model.DeviceInfo) (string, string, error) {
-	return au.byEmail(ctx, nil, au.accountOps.writeDB, email, password, deviceInfo)
+func (au *Authentication) ByEmail(ctx context.Context, email string, password string, deviceInfo *model.DeviceInfo) (string, string, error) {
+	return au.byEmail(ctx, nil, au.writeDB, email, password, deviceInfo)
 }
 
-func (au *Authentication) AuthenticatePassword(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, accountFromDB *model.Account, password string, deviceInfo model.DeviceInfo) (string, string, error) {
+func (au *Authentication) authenticatePassword(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, accountFromDB *model.Account, password string, deviceInfo *model.DeviceInfo) (string, string, error) {
 	isAuthenticated, errVerifyPassword := accountFromDB.VerifyPassword(password)
 	if errVerifyPassword != nil {
 		return "", "", errVerifyPassword
@@ -239,17 +253,17 @@ func (au *Authentication) AuthenticatePassword(ctx context.Context, pipe redis.P
 		return "", "", model.Unauthorized
 	}
 
-	return au.GenerateToken(ctx, pipe, db, accountFromDB, deviceInfo.DeviceId, deviceInfo.DeviceType, deviceInfo.UserAgent)
+	return au.generateToken(ctx, pipe, db, accountFromDB, deviceInfo.DeviceId, deviceInfo.DeviceType, deviceInfo.UserAgent)
 }
 
-func (au *Authentication) GenerateToken(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, accountFromDB *model.Account, deviceId string, deviceType string, userAgent string) (string, string, error) {
+func (au *Authentication) generateToken(ctx context.Context, pipe redis.Pipeliner, db types.SQLExecutor, accountFromDB *model.Account, deviceId string, deviceType string, userAgent string) (string, string, error) {
 	session := model.NewSession()
 	session.SetDeviceId(deviceId)
 	session.SetDeviceType(deviceType)
 	session.SetUserAgent(userAgent)
 	session.SetAccountUUID(accountFromDB.GetUUID())
 	session.SetLastActiveAt(time.Now().UTC())
-	session.SetLifeSpan(au.accountOps.config.TokenLifespan)
+	session.SetLifeSpan(au.config.TokenLifespan)
 	errGenerateToken := session.GenerateRefreshToken()
 	if errGenerateToken != nil {
 		return "", "", errGenerateToken
@@ -257,18 +271,18 @@ func (au *Authentication) GenerateToken(ctx context.Context, pipe redis.Pipeline
 
 	var errCreateSession error
 	if pipe != nil {
-		errCreateSession = au.accountOps.sessionOps.WithTransaction(pipe, db.(*sql.Tx)).Create(ctx, session)
+		errCreateSession = au.sessionOps.WithTransaction(pipe, db.(*sql.Tx)).Create(ctx, session)
 	} else {
-		errCreateSession = au.accountOps.sessionOps.Create(ctx, session)
+		errCreateSession = au.sessionOps.Create(ctx, session)
 	}
 	if errCreateSession != nil {
 		return "", "", errCreateSession
 	}
 
 	accessToken, errGenerateAccToken := accountFromDB.GenerateAccessToken(
-		au.accountOps.config.JWTSecret,
-		au.accountOps.config.JWTIssuer,
-		au.accountOps.config.JWTLifespan,
+		au.config.JWTSecret,
+		au.config.JWTIssuer,
+		au.config.JWTLifespan,
 		session.GetRandId())
 	if errGenerateAccToken != nil {
 		return "", "", errGenerateAccToken
@@ -277,16 +291,28 @@ func (au *Authentication) GenerateToken(ctx context.Context, pipe redis.Pipeline
 	return accessToken, session.RefreshToken, nil
 }
 
-func (au *AuthenticationWithPipe) WithTransaction(pipe redis.Pipeliner, db *sql.Tx) *AuthenticationWithPipe {
-	return &AuthenticationWithPipe{authOps: au.authOps, pipeline: pipe, tx: db}
+func (au *Authentication) WithTransaction(pipe redis.Pipeliner, db *sql.Tx) *AuthenticationWithPipe {
+	return &AuthenticationWithPipe{authOps: au, pipeline: pipe, tx: db}
 }
 
 func New(accountRepository *repository.AccountRepository, providerRepository *repository.ProviderRepository, accountFetcher *fetcher.AccountFetcher, sessionOps *session.SessionOps, config *config.App) *AccountOps {
+	authenticate := &Authentication{
+		accountRepository:  accountRepository,
+		providerRepository: providerRepository,
+		sessionOps:         sessionOps,
+		config:             config,
+	}
+	accountFinder := &Find{accountRepository: accountRepository}
+	accountFetchers := &Fetch{accountFetcher: accountFetcher}
+
 	return &AccountOps{
 		accountRepository:  accountRepository,
 		providerRepository: providerRepository,
 		accountFetcher:     accountFetcher,
-		sessionOps:         sessionOps,
 		config:             config,
+
+		Authenticate: authenticate,
+		Find:         accountFinder,
+		Fetch:        accountFetchers,
 	}
 }
